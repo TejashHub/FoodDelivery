@@ -1,45 +1,52 @@
-/**
- * @copyright 2025 Payal Yadav
- * @license Apache-2.0
- */
-
 import nodemailer from "nodemailer";
 import hbs from "nodemailer-express-handlebars";
-import nodemailerExpressHandlebars from "nodemailer-express-handlebars";
 import path from "path";
+import { fileURLToPath } from "url";
 import { USER_EMAIL_ID, USER_EMAIL_PASSWORD } from "../constant/constant.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const transporter = nodemailer.createTransport({
   service: "gmail",
+  host: "smtp.gmail.com",
+  port: 587,
+  secure: false,
   auth: {
     user: USER_EMAIL_ID,
     pass: USER_EMAIL_PASSWORD,
   },
 });
 
-transporter.use(
-  "compile",
-  hbs({
-    viewEngine: {
-      extName: ".hbs",
-      partialsDir: path.join(process.cwd(), "public/template"),
-      defaultLayout: false,
-    },
-    viewPath: path.join(process.cwd(), "public/template"),
+// Configure handlebars
+const handlebarOptions = {
+  viewEngine: {
     extName: ".hbs",
-  })
-);
+    partialsDir: path.join(__dirname, "../../public/template"),
+    defaultLayout: false,
+  },
+  viewPath: path.join(__dirname, "../../public/template"),
+  extName: ".hbs",
+};
+
+transporter.use("compile", hbs(handlebarOptions));
 
 const sendEmail = async ({ to, subject, template, context }) => {
   try {
+    if (!to) throw new Error("Recipient email address (to) is required");
+    if (!subject) throw new Error("Email subject is required");
+    if (!template) throw new Error("Template name is required");
+
     const mailOptions = {
-      from: USER_EMAIL_ID,
-      to,
+      from: `"Your App Name" <${USER_EMAIL_ID}>`,
+      to: Array.isArray(to) ? to : [to],
       subject,
       template,
       context,
     };
-    return await transporter.sendMail(mailOptions);
+
+    const info = await transporter.sendMail(mailOptions);
+    return info;
   } catch (error) {
     console.error("Error sending email:", error);
     throw error;

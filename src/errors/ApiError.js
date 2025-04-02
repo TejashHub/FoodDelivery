@@ -5,7 +5,12 @@
 
 export class ApiError extends Error {
   constructor(statusCode, message) {
-    super(message);
+    super(message || "Something went wrong");
+
+    if (!statusCode || typeof statusCode !== "number") {
+      throw new Error("HTTP status code must be a number");
+    }
+
     this.statusCode = statusCode;
     this.message = message || "Something went wrong";
     this.isOperational = true;

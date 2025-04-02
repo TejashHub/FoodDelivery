@@ -7,16 +7,17 @@ import User from "../../model/user.model.js";
 import jwt from "jsonwebtoken";
 import generateOTP from "../../utils/otpGenerator.js";
 import sendEmail from "../../utils/nodemailer.js";
+import rateLimit from "express-rate-limit";
+import bcrypt from "bcryptjs";
+import asyncHandler from "../../middleware/asyncHandler.middleware.js";
 import { TokenBlacklist } from "../../model/user.model.js";
 import { ApiError } from "../../errors/ApiError.js";
 import { StatusCodes } from "http-status-codes";
-import asyncHandler from "../../middleware/asyncHandler.middleware.js";
 import { REFRESH_TOKEN_SECRET } from "../../constant/constant.js";
 import {
   cloudinaryFileUpload,
   cloudinaryFileRemove,
 } from "../../utils/cloudinary.js";
-import rateLimit from "express-rate-limit";
 
 // Cookies Options
 const cookieOptions = {
@@ -69,7 +70,10 @@ export const register = asyncHandler(async (req, res) => {
   const { fullName, email, userName, password } = req.body;
 
   if ([fullName, email, userName, password].some((field) => !field?.trim())) {
-    throw new ApiError(StatusCodes.BAD_REQUEST, "All fields are required");
+    throw new ApiError(
+      StatusCodes.BAD_REQUEST,
+      "fullName, email, userName and password"
+    );
   }
 
   const existedUser = await User.findOne({ $or: [{ userName }, { email }] });
@@ -106,15 +110,15 @@ export const register = asyncHandler(async (req, res) => {
       url: avatar.secure_url,
     },
     otp: await bcrypt.hash(otp, 10),
-    otpExpiry,
+    otpExpiry: Date.now() + 10 * 60 * 1000,
   });
 
   try {
     await sendEmail({
-      email: user.email,
+      to: user.email,
       subject: "Verify Your Email",
       template: "emailVerification",
-      data: {
+      context: {
         name: user.fullName,
         otp,
         expiresIn: "10 minutes",
@@ -140,6 +144,41 @@ export const register = asyncHandler(async (req, res) => {
       email: user.email,
       avatar: user.avatar?.url,
     },
+  });
+});
+
+// Verify email with OTP
+export const verifyEmail = asyncHandler(async (req, res) => {
+  const { email, otp } = req.body;
+
+  if (!email || !otp) {
+    throw new ApiError(StatusCodes.BAD_REQUEST, "Email and OTP are required");
+  }
+
+  const user = await User.findOne({
+    email,
+    otp: { $exists: true },
+    otpExpiry: { $gt: Date.now() },
+  }).select("+otp +otpExpiry");
+
+  if (!user) {
+    throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid or expired OTP");
+  }
+
+  const isOTPValid = await user.compareOTP(otp);
+
+  if (!isOTPValid) {
+    throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid OTP");
+  }
+
+  user.isVerified = true;
+  user.otp = undefined;
+  user.otpExpiry = undefined;
+  await user.save();
+
+  return res.status(StatusCodes.OK).json({
+    success: true,
+    message: "Email verified successfully. You can now login.",
   });
 });
 
@@ -243,7 +282,7 @@ export const forgotPassword = asyncHandler(async (req, res) => {
   }
 
   const resetOTP = generateOTP();
-  const resetOTPExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+  const resetOTPExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
   user.resetPasswordOTP = await user.hashOTP(resetOTP);
   user.resetPasswordExpiresAt = resetOTPExpiresAt;
@@ -251,10 +290,10 @@ export const forgotPassword = asyncHandler(async (req, res) => {
 
   try {
     await sendEmail({
-      email: user.email,
-      subject: "Password Reset OTP",
+      to: user.email,
+      subject: "passwordReset Reset OTP",
       template: "passwordReset",
-      data: {
+      context: {
         name: user.fullName,
         otp: resetOTP,
         expiresIn: "10 minutes",
@@ -308,7 +347,7 @@ export const resetPassword = asyncHandler(async (req, res) => {
     email,
     resetPasswordOTP: { $exists: true },
     resetPasswordExpiresAt: { $gt: Date.now() },
-  }).select("+resetPasswordOTP");
+  }).select("+resetPasswordOTP +resetPasswordExpiresAt");
 
   if (!user) {
     throw new ApiError(
@@ -317,7 +356,7 @@ export const resetPassword = asyncHandler(async (req, res) => {
     );
   }
 
-  const isOTPValid = await user.compareOTP(otp);
+  const isOTPValid = await bcrypt.compare(otp, user.resetPasswordOTP);
   if (!isOTPValid) {
     throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid OTP");
   }
@@ -342,10 +381,10 @@ export const resetPassword = asyncHandler(async (req, res) => {
 
   try {
     await sendEmail({
-      email: user.email,
+      to: user.email,
       subject: "Password Changed Successfully",
       template: "passwordChanged",
-      data: {
+      context: {
         name: user.fullName,
         timestamp: new Date().toLocaleString(),
       },
@@ -460,40 +499,6 @@ export const logout = asyncHandler(async (req, res) => {
   return res.status(StatusCodes.OK).json({
     success: true,
     message: "Logged out successfully",
-  });
-});
-
-// Verify email with OTP
-export const verifyEmail = asyncHandler(async (req, res) => {
-  const { email, otp } = req.body;
-
-  if (!email || !otp) {
-    throw new ApiError(StatusCodes.BAD_REQUEST, "Email and OTP are required");
-  }
-
-  const user = await User.findOne({
-    email,
-    otp: { $exists: true },
-    otpExpiry: { $gt: Date.now() },
-  });
-
-  if (!user) {
-    throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid or expired OTP");
-  }
-
-  const isOTPValid = await user.compareOTP(otp);
-  if (!isOTPValid) {
-    throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid OTP");
-  }
-
-  user.isVerified = true;
-  user.otp = undefined;
-  user.otpExpiry = undefined;
-  await user.save();
-
-  return res.status(StatusCodes.OK).json({
-    success: true,
-    message: "Email verified successfully. You can now login.",
   });
 });
 

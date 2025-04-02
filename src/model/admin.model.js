@@ -10,14 +10,12 @@ const adminSchema = new mongoose.Schema(
       unique: true,
       validate: {
         validator: async function (userId) {
-          const user = await User.findById(userId);
-          if (!user) return false;
-          return (
-            user.isActive && !["delivery_agent", "admin"].includes(user.role)
-          );
+          const user = await User.findById(userId)
+            .select("role isActive")
+            .lean();
+          return user?.isActive && user.role === "user";
         },
-        message:
-          "User must be active and not already an admin or delivery agent",
+        message: "User must be active regular user",
       },
     },
     adminId: {
@@ -131,6 +129,11 @@ adminSchema.index({ lastAccess: -1 });
 adminSchema.virtual("permissionTier").get(function () {
   const tiers = { super: 3, regional: 2, support: 1 };
   return tiers[this.accessLevel] || 0;
+});
+
+// Add to admin schema
+adminSchema.add({
+  version: { type: Number, default: 0 },
 });
 
 // Hooks

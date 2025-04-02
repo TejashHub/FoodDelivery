@@ -7,11 +7,15 @@ import jwt from "jsonwebtoken";
 import User from "../model/user.model.js";
 import asyncHandler from "../middleware/asyncHandler.middleware.js";
 import { ACCESS_TOKEN_SECRET } from "../constant/constant.js";
+import { ApiError } from "../errors/ApiError.js";
+import { StatusCodes } from "http-status-codes";
+import { TokenBlacklist } from "../model/user.model.js";
+import Admin from "../model/admin.model.js";
 
-export const authMiddleware = asyncHandler(async (req, _) => {
+export const authMiddleware = asyncHandler(async (req, _, next) => {
   try {
     const token =
-      req.cookies?.access_token ||
+      req.cookies?.accessToken ||
       req.header("Authorization")?.replace("Bearer ", "");
 
     if (!token) {
@@ -44,15 +48,3 @@ export const authMiddleware = asyncHandler(async (req, _) => {
     throw error;
   }
 });
-
-export const authorize = (...roles) => {
-  return (req, _, next) => {
-    if (!roles.includes(req.user.role)) {
-      throw new ApiError(
-        StatusCodes.FORBIDDEN,
-        "You are not authorized to access this resource"
-      );
-    }
-    next();
-  };
-};

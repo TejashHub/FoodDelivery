@@ -43,29 +43,26 @@ export const getProfile = asyncHandler(async (req, res) => {
 
 // Update User Profile
 export const updateProfile = asyncHandler(async (req, res) => {
-  const { fullName, userName } = req.body;
-  const updateData = { fullName, userName };
+  const { fullName, userName, email } = req.body;
 
-  if (req.file) {
-    const avatar = await cloudinaryFileUpload(req.file.path, "avatars");
-    if (!avatar) {
-      throw new ApiError(StatusCodes.BAD_REQUEST, "Avatar upload failed");
-    }
-
-    if (req.user.avatar?.public_id) {
-      await cloudinaryFileRemove(req.user.avatar.public_id);
-    }
-
-    updateData.avatar = {
-      public_id: avatar.public_id,
-      url: avatar.secure_url,
-    };
+  if (!fullName || !email || userName) {
+    throw new ApiError(
+      StatusCodes.BAD_REQUEST,
+      "FullName, UserName and Email are required."
+    );
   }
 
-  const user = await User.findByIdAndUpdate(req.user._id, updateData, {
-    new: true,
-    runValidators: true,
-  });
+  const user = await User.findByIdAndUpdate(
+    req.user?._id,
+    { ...req.body },
+    { new: true }
+  ).select(
+    "-password -refreshToken -resetPasswordOTP -resetPasswordExpiresAt -otp -otpExpiry"
+  );
+
+  if (!user) {
+    throw new ApiError(StatusCodes.BAD_REQUEST, "User not found!");
+  }
 
   return res.status(StatusCodes.OK).json({
     success: true,
@@ -82,9 +79,39 @@ export const updateProfile = asyncHandler(async (req, res) => {
   });
 });
 
+// Update Avatar
+export const updateAvatar = asyncHandler(async (req, res) => {
+  const avatarLocalFile = req.file?.path;
+  if (!avatarLocalFile) {
+    throw new ApiError(StatusCodes.BAD_REQUEST, "Avatar image not found.");
+  }
+
+  const avatar = await cloudinaryFileUpload(avatarLocalFile);
+
+  if (!avatar.url) {
+    throw new ApiError(StatusCodes.BAD_REQUEST, "Error while uploading avatar");
+  }
+
+  const user = await User.findByIdAndUpdate(
+    req.user?.id,
+    { avatar: avatar.url },
+    { new: true }
+  ).select(
+    "-password -refreshToken -resetPasswordOTP -resetPasswordExpiresAt -otp -otpExpiry"
+  );
+
+  return res.status(StatusCodes.OK).json({
+    user: user?.avatar,
+    msg: "Avatar updated successfully.",
+    success: true,
+  });
+});
+
 // Change Password
 export const changePassword = asyncHandler(async (req, res) => {
   const { currentPassword, newPassword } = req.body;
+  console.log(currentPassword);
+  console.log(newPassword);
 
   if (!currentPassword || !newPassword) {
     throw new ApiError(
@@ -124,10 +151,10 @@ export const changePassword = asyncHandler(async (req, res) => {
 
   try {
     await sendEmail({
-      email: user.email,
+      to: user.email,
       subject: "Password Changed",
       template: "passwordChanged",
-      data: {
+      context: {
         name: user.fullName,
         timestamp: new Date().toLocaleString(),
       },

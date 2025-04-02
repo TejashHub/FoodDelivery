@@ -261,12 +261,12 @@ userSchema.methods = {
   },
 
   hashOTP: async function (otp) {
-    const salt = await bcrypt.genSalt(10);
-    return await bcrypt.hash(otp, salt);
+    return await bcrypt.hash(otp, 10);
   },
 
   compareOTP: async function (candidateOTP) {
-    if (!this.otp) return false;
+    if (!this.otp) throw new Error("OTP not found in user document");
+    if (!this.otpExpiry || this.otpExpiry < Date.now()) return false;
     return await bcrypt.compare(candidateOTP, this.otp);
   },
 
