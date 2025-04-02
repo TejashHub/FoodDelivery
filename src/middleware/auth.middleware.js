@@ -10,7 +10,6 @@ import { ACCESS_TOKEN_SECRET } from "../constant/constant.js";
 import { ApiError } from "../errors/ApiError.js";
 import { StatusCodes } from "http-status-codes";
 import { TokenBlacklist } from "../model/user.model.js";
-import Admin from "../model/admin.model.js";
 
 export const authMiddleware = asyncHandler(async (req, _, next) => {
   try {
@@ -48,3 +47,14 @@ export const authMiddleware = asyncHandler(async (req, _, next) => {
     throw error;
   }
 });
+
+export const authRoles = (...roles) => {
+  return (req, res, next) => {
+    if (!roles.includes(req.user.role)) {
+      return res.status(403).json({
+        message: `Forbidden - ${req.user.role} role is not authorized to access this resource`,
+      });
+    }
+    next();
+  };
+};
