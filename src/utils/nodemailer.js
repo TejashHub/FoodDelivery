@@ -5,6 +5,7 @@
 
 import nodemailer from "nodemailer";
 import hbs from "nodemailer-express-handlebars";
+import nodemailerExpressHandlebars from "nodemailer-express-handlebars";
 import path from "path";
 import { USER_EMAIL_ID, USER_EMAIL_PASSWORD } from "../constant/constant.js";
 

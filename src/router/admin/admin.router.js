@@ -6,19 +6,29 @@
 import express from "express";
 import {
   promoteToAdmin,
-  deleteUser,
   getAllUsers,
-  updateUser,
   getUser,
-} from "../controllers/admin.controller.js";
-import { authenticate, authorize } from "../middleware/auth.middleware.js";
+  updateUser,
+  deleteUser,
+  getAdminDetails,
+  updateAdminDetails,
+} from "../../controller/admin/admin.controller.js";
+import { authMiddleware, authorize } from "../../middleware/auth.middleware.js";
 
 const router = express.Router();
 
-router.use(authenticate, authorize("admin"));
+// Admin Protected Routes
+router.use(authMiddleware);
+router.use(authorize("admin"));
 
+// User management
 router.route("/users").get(getAllUsers);
 router.route("/users/:id").get(getUser).patch(updateUser).delete(deleteUser);
 router.route("/users/:id/promote").get(promoteToAdmin);
+
+// Admin management
+router.post("/promote/:id", promoteToAdmin);
+router.get("/me", getAdminDetails);
+router.patch("/me", updateAdminDetails);
 
 export default router;

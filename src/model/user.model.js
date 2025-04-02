@@ -11,7 +11,10 @@ import {
   ACCESS_TOKEN_EXPIRES_IN,
   REFRESH_TOKEN_SECRET,
   REFRESH_TOKEN_EXPIRES_IN,
+  ACCOUNT_LOCK_DURATION,
+  MAX_LOGIN_ATTEMPTS,
 } from "../constant/constant.js";
+import uniqueValidator from "mongoose-unique-validator";
 
 const tokenBlacklistSchema = new mongoose.Schema({
   token: {
@@ -22,12 +25,13 @@ const tokenBlacklistSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ["refresh", "reset"],
+    enum: ["access", "refresh", "reset"],
     required: true,
   },
   userId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",
+    required: true,
   },
   createdAt: {
     type: Date,
@@ -48,6 +52,10 @@ const userSchema = new mongoose.Schema(
       trim: true,
       required: [true, "Full name is required"],
       maxlength: [50, "Name cannot exceed 50 characters"],
+      match: [
+        /^[a-zA-Z\s'-]+$/,
+        "Full name can only contain letters, spaces, apostrophes, and hyphens",
+      ],
     },
     userName: {
       type: String,
@@ -58,9 +66,16 @@ const userSchema = new mongoose.Schema(
       minlength: [3, "Username must be at least 3 characters"],
       maxlength: [20, "Username cannot exceed 20 characters"],
       match: [
-        /^[a-z0-9_]+$/,
-        "Username can only contain lowercase letters, numbers and underscores",
+        /^[a-z0-9]+(?:_[a-z0-9]+)*$/,
+        "Username can only contain letters, numbers and underscores",
       ],
+      validate: {
+        validator: function (v) {
+          const reserved = ["admin", "root", "system", "support"];
+          return !reserved.includes(v.toLowerCase());
+        },
+        message: "Username '{VALUE}' is reserved",
+      },
     },
     email: {
       type: String,
@@ -69,8 +84,8 @@ const userSchema = new mongoose.Schema(
       lowercase: true,
       required: [true, "Email is required"],
       match: [
-        /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/,
-        "Please fill a valid email address",
+        /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+        "Please enter a valid email address",
       ],
     },
     password: {
@@ -78,7 +93,55 @@ const userSchema = new mongoose.Schema(
       required: [true, "Password is required"],
       minlength: [8, "Password must be at least 8 characters"],
       select: false,
+      match: [
+        /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/,
+        "Password must contain at least one uppercase, lowercase, number, and special character",
+      ],
     },
+    phone: {
+      type: String,
+      trim: true,
+      match: [
+        /^\+?[1-9]\d{1,14}$/,
+        "Phone number must be in international format (e.g., +1234567890)",
+      ],
+    },
+    addresses: [
+      {
+        street: {
+          type: String,
+          required: [true, "Street address is required"],
+          trim: true,
+        },
+        city: {
+          type: String,
+          required: [true, "City is required"],
+          trim: true,
+        },
+        state: {
+          type: String,
+          required: [true, "State is required"],
+          trim: true,
+        },
+        postalCode: {
+          type: String,
+          required: [true, "Postal code is required"],
+          trim: true,
+          match: [/^[0-9a-zA-Z\- ]+$/, "Invalid postal code"],
+        },
+        country: {
+          type: String,
+          required: [true, "Country is required"],
+          trim: true,
+        },
+        latitude: Number,
+        longitude: Number,
+        isDefault: {
+          type: Boolean,
+          default: false,
+        },
+      },
+    ],
     avatar: {
       public_id: {
         type: String,
@@ -91,7 +154,7 @@ const userSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ["user", "admin"],
+      enum: ["user", "admin", "moderator"],
       default: "user",
     },
     isVerified: {
@@ -102,7 +165,7 @@ const userSchema = new mongoose.Schema(
       type: String,
       select: false,
     },
-    resetPasswordToken: {
+    resetPasswordOTP: {
       type: String,
       select: false,
     },
@@ -132,6 +195,18 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    twoFactorEnabled: {
+      type: Boolean,
+      default: false,
+    },
+    twoFactorSecret: {
+      type: String,
+      select: false,
+    },
+    tokenVersion: {
+      type: Number,
+      default: 0,
+    },
   },
   {
     timestamps: true,
@@ -140,43 +215,61 @@ const userSchema = new mongoose.Schema(
       transform: function (doc, ret) {
         delete ret.password;
         delete ret.refreshToken;
-        delete ret.resetPasswordToken;
+        delete ret.resetPasswordOTP;
         delete ret.otp;
+        delete ret.twoFactorSecret;
+        delete ret.tokenVersion;
         return ret;
       },
     },
   }
 );
 
-// Hash password before saving
 userSchema.pre("save", async function (next) {
   if (!this.isModified("password")) return next();
+
   try {
     const salt = await bcrypt.genSalt(10);
     this.password = await bcrypt.hash(this.password, salt);
+    next();
   } catch (error) {
     next(error);
   }
 });
 
+userSchema.pre("save", function (next) {
+  if (this.isModified("userName")) {
+    this.userName = this.userName.toLowerCase();
+  }
+  next();
+});
+
+userSchema.virtual("addresses.fullAddress").get(function () {
+  return this.addresses.map(
+    (address) =>
+      `${address.street}, ${address.city}, ${address.state} ${address.postalCode}, ${address.country}`
+  );
+});
+
 userSchema.methods = {
-  // Compare passwords
-  comparePassword: async function (candidatePassword) {
-    return bcrypt.compare(candidatePassword, this.password);
+  isAdmin: function () {
+    return this.role === "admin";
   },
 
-  // Hash OTP
+  comparePassword: async function (candidatePassword) {
+    return await bcrypt.compare(candidatePassword, this.password);
+  },
+
   hashOTP: async function (otp) {
     const salt = await bcrypt.genSalt(10);
     return await bcrypt.hash(otp, salt);
   },
 
-  // Compare OTP
   compareOTP: async function (candidateOTP) {
-    return await bcrypt.compare(candidateOTP, this.resetPasswordToken);
+    if (!this.otp) return false;
+    return await bcrypt.compare(candidateOTP, this.otp);
   },
 
-  // Generate Access Token
   generateAccessToken: function () {
     return jwt.sign(
       {
@@ -184,24 +277,28 @@ userSchema.methods = {
         email: this.email,
         fullName: this.fullName,
         userName: this.userName,
+        role: this.role,
       },
       ACCESS_TOKEN_SECRET,
       { expiresIn: ACCESS_TOKEN_EXPIRES_IN }
     );
   },
 
-  // Generate Refresh Token
   generateRefreshToken: function () {
-    return jwt.sign({ _id: this._id }, REFRESH_TOKEN_SECRET, {
-      expiresIn: REFRESH_TOKEN_EXPIRES_IN,
-    });
+    return jwt.sign(
+      {
+        _id: this._id,
+        tokenVersion: this.tokenVersion,
+      },
+      REFRESH_TOKEN_SECRET,
+      { expiresIn: REFRESH_TOKEN_EXPIRES_IN }
+    );
   },
 
-  // Account lock check
   isLocked: function () {
     return !!(this.lockUntil && this.lockUntil > Date.now());
   },
-  // Increment login attempts
+
   incrementLoginAttempts: async function () {
     if (this.lockUntil && this.lockUntil < Date.now()) {
       return await this.updateOne({
@@ -211,12 +308,27 @@ userSchema.methods = {
     }
 
     const updates = { $inc: { loginAttempts: 1 } };
-    if (this.loginAttempts + 1 >= 5) {
-      updates.$set = { lockUntil: Date.now() + 30 * 60 * 1000 };
+    if (this.loginAttempts + 1 >= MAX_LOGIN_ATTEMPTS) {
+      updates.$set = { lockUntil: Date.now() + ACCOUNT_LOCK_DURATION };
     }
     return await this.updateOne(updates);
   },
+
+  resetLoginAttempts: async function () {
+    return await this.updateOne({
+      $set: { loginAttempts: 0 },
+      $unset: { lockUntil: 1 },
+    });
+  },
+
+  incrementTokenVersion: async function () {
+    return await this.updateOne({ $inc: { tokenVersion: 1 } });
+  },
 };
+
+userSchema.plugin(uniqueValidator, {
+  message: "{PATH} '{VALUE}' is already in use",
+});
 
 const User = mongoose.model("User", userSchema);
 

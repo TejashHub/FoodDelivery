@@ -27,3 +27,7 @@ export const REFRESH_TOKEN_EXPIRES_IN = process.env.REFRESH_TOKEN_EXPIRES_IN;
 // User Email Credentials
 export const USER_EMAIL_ID = process.env.USER_EMAIL_ID;
 export const USER_EMAIL_PASSWORD = process.env.USER_EMAIL_PASSWORD;
+
+// Account Credentials
+export const ACCOUNT_LOCK_DURATION = 15 * 60 * 1000;
+export const MAX_LOGIN_ATTEMPTS = 5;

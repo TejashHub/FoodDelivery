@@ -232,9 +232,6 @@ const orderSchema = new mongoose.Schema(
 orderSchema.index({ "deliveryAddress.geoLocation": "2dsphere" });
 orderSchema.index({ restaurantLocation: "2dsphere" });
 orderSchema.index({ "deliveryAgent.locationUpdates.coordinates": "2dsphere" });
-orderSchema.index({ status: 1, createdAt: -1 });
-orderSchema.index({ user: 1, createdAt: -1 });
-orderSchema.index({ restaurant: 1, createdAt: -1 });
 
 orderSchema.pre("save", function (next) {
   if (!this.shortId) {

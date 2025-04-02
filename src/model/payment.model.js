@@ -151,12 +151,9 @@ const paymentSchema = mongoose.Schema(
   },
   { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } }
 );
-
 paymentSchema.index({ transactionId: 1 });
 paymentSchema.index({ "methodDetails.card.last4": 1 });
 paymentSchema.index({ "methodDetails.upi.vpa": 1 });
-paymentSchema.index({ createdAt: -1 });
-paymentSchema.index({ status: 1, createdAt: -1 });
 
 paymentSchema.pre("save", function (next) {
   if (!this.shortId) {
@@ -213,4 +210,6 @@ paymentSchema.methods.getRefundedAmount = function () {
     .reduce((sum, refund) => sum + refund.amount, 0);
 };
 
-module.exports = mongoose.model("Payment", paymentSchema);
+const Payment = mongoose.model("Payment", paymentSchema);
+
+export default Payment;

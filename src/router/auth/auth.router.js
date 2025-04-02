@@ -9,37 +9,29 @@ import {
   login,
   logout,
   refreshAccessToken,
-  forgotPassword,
-  resetPassword,
   verifyEmail,
   resendVerification,
+  forgotPassword,
+  resetPassword,
   authLimiter,
   passwordResetLimiter,
-  getProfile,
-  updateProfile,
-  changePassword,
-  deleteAccount,
-} from "../controllers/auth.controller.js";
+} from "../../controller/auth/auth.controller.js";
 import { authMiddleware } from "../../middleware/auth.middleware.js";
+import upload from "../../middleware/multer.middleware.js";
 
 const router = express.Router();
 
 // Public Route
 router.route("/login").post(authLimiter, login);
-router.route("/register").post(upload.single("avatar"), register);
-router.route("/refresh-token").get(refreshAccessToken);
+router.route("/register").post(authLimiter, upload.single("avatar"), register);
+router.route("/verify-email").post(verifyEmail);
 router.route("/forgot-password").post(passwordResetLimiter, forgotPassword);
-router.route("/reset-password").post(verifyEmail);
 router.route("/verify-email").post(passwordResetLimiter, resetPassword);
 router.route("/resend-verification").post(resendVerification);
+router.route("/refresh-token").get(refreshAccessToken);
 
 // Private Route
 router.route("/").post(authMiddleware, logout);
-router
-  .route("/me")
-  .post(authMiddleware, getProfile)
-  .patch(authMiddleware, upload.single("avatar"), updateProfile)
-  .delete(authMiddleware, deleteAccount);
-router.route("/me/change-password").post(authMiddleware, changePassword);
+router.route("/refresh-token").get(authMiddleware, refreshAccessToken);
 
 export default router;

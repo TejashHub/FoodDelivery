@@ -5,7 +5,7 @@
 
 import jwt from "jsonwebtoken";
 import User from "../model/user.model.js";
-import { asyncHandler } from ".././middleware/asyncHandler.middleware.js";
+import asyncHandler from "../middleware/asyncHandler.middleware.js";
 import { ACCESS_TOKEN_SECRET } from "../constant/constant.js";
 
 export const authMiddleware = asyncHandler(async (req, _) => {
@@ -26,7 +26,7 @@ export const authMiddleware = asyncHandler(async (req, _) => {
     }
 
     const user = await User.findById(decoded._id).select(
-      "-password -refreshToken"
+      "-password -refreshToken -resetPasswordToken -otp"
     );
     if (!user) {
       throw new ApiError(StatusCodes.UNAUTHORIZED, "User not found");

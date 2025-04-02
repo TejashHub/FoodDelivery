@@ -122,8 +122,8 @@ const restaurantSchema = new mongoose.Schema(
       website: String,
     },
 
+    type: Map,
     openingHours: {
-      type: Map,
       of: new Schema({
         open: { type: String, match: /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/ },
         close: { type: String, match: /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/ },
@@ -250,7 +250,6 @@ const restaurantSchema = new mongoose.Schema(
     toObject: { virtuals: true },
   }
 );
-
 restaurantSchema.index({ "location.geoLocation": "2dsphere" });
 
 restaurantSchema.index({
@@ -299,4 +298,6 @@ restaurantSchema.methods.checkOpenStatus = function () {
   return currentTime >= openTime && currentTime <= closeTime;
 };
 
-export const Restaurant = mongoose.model("Restaurant", restaurantSchema);
+const Restaurant = mongoose.model("Restaurant", restaurantSchema);
+
+export default Restaurant;

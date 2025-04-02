@@ -10,55 +10,58 @@ import sendEmail from "../../utils/nodemailer.js";
 import { TokenBlacklist } from "../../model/user.model.js";
 import { ApiError } from "../../errors/ApiError.js";
 import { StatusCodes } from "http-status-codes";
-import { asyncHandler } from "../../middleware/index.js";
-import { StatusCodes } from "http-status-codes";
+import asyncHandler from "../../middleware/asyncHandler.middleware.js";
 import { REFRESH_TOKEN_SECRET } from "../../constant/constant.js";
 import {
   cloudinaryFileUpload,
   cloudinaryFileRemove,
 } from "../../utils/cloudinary.js";
+import rateLimit from "express-rate-limit";
 
 // Cookies Options
-const options = {
+const cookieOptions = {
   httpOnly: true,
   secure: false,
+  sameSite: "strict",
   maxAge: 7 * 24 * 60 * 60 * 1000,
 };
 
 // Authentication limit
-export const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
   max: 10,
   message: "Too many requests from this IP, please try again later",
   skipSuccessfulRequests: true,
 });
 
 // Password Reset Limit
-export const passwordResetLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000,
+const passwordResetLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
   max: 3,
   message: "Too many password reset attempts, please try again later",
 });
 
 // Generate Tokens
-const generateAccessAndRefreshToken = async (id) => {
-  if (!id) {
-    throw new ApiError(StatusCodes.INTERNAL_SERVER_ERROR, "User not found");
+const generateAccessAndRefreshToken = async (userId) => {
+  try {
+    const user = await User.findById(userId);
+    if (!user) {
+      throw new ApiError(StatusCodes.NOT_FOUND, "User not found");
+    }
+
+    const accessToken = user.generateAccessToken();
+    const refreshToken = user.generateRefreshToken();
+
+    user.refreshToken = refreshToken;
+    await user.save({ validateBeforeSave: false });
+
+    return { accessToken, refreshToken };
+  } catch (error) {
+    throw new ApiError(
+      StatusCodes.INTERNAL_SERVER_ERROR,
+      "Failed to generate tokens"
+    );
   }
-
-  const user = await User.findById(id);
-  if (!user) {
-    throw new ApiError(StatusCodes.NOT_FOUND, "User not found");
-  }
-
-  const access_token = await user.generateAccessToken();
-  const refresh_token = await user.generateRefreshToken();
-
-  user.access_token = access_token;
-  user.refreshToken = refresh_token;
-  await user.save({ validateBeforeSave: false });
-
-  return { access_token, refresh_token };
 };
 
 // Register User
@@ -66,13 +69,17 @@ export const register = asyncHandler(async (req, res) => {
   const { fullName, email, userName, password } = req.body;
 
   if ([fullName, email, userName, password].some((field) => !field?.trim())) {
-    throw ApiError(StatusCodes.BAD_REQUEST, "All fields are required");
+    throw new ApiError(StatusCodes.BAD_REQUEST, "All fields are required");
   }
 
   const existedUser = await User.findOne({ $or: [{ userName }, { email }] });
 
-  if (existedUser)
-    throw ApiError(StatusCodes.CONFLICT, "Username or Email already in use.");
+  if (existedUser) {
+    throw new ApiError(
+      StatusCodes.CONFLICT,
+      "Username or Email already in use."
+    );
+  }
 
   const avatarLocalPath = req.file?.path;
 
@@ -94,13 +101,11 @@ export const register = asyncHandler(async (req, res) => {
     email,
     userName,
     password,
-    avatar: avatar
-      ? {
-          public_id: avatar.public_id,
-          url: avatar.secure_url,
-        }
-      : undefined,
-    otp,
+    avatar: {
+      public_id: avatar.public_id,
+      url: avatar.secure_url,
+    },
+    otp: await bcrypt.hash(otp, 10),
     otpExpiry,
   });
 
@@ -116,9 +121,7 @@ export const register = asyncHandler(async (req, res) => {
       },
     });
   } catch (error) {
-    if (avatar?.public_id) {
-      await cloudinaryFileRemove(avatar.public_id);
-    }
+    await cloudinaryFileRemove(avatar.public_id);
     await User.findByIdAndDelete(user._id);
     throw new ApiError(
       StatusCodes.INTERNAL_SERVER_ERROR,
@@ -176,39 +179,34 @@ export const login = asyncHandler(async (req, res) => {
     );
   }
 
-  const isPassword = await user.comparePassword(password);
+  const isPasswordValid = await user.comparePassword(password);
 
-  if (!isPassword) {
+  if (!isPasswordValid) {
     await user.incrementLoginAttempts();
-    const attemptsLeft = 5 - (user.loginAttempts + 1);
+    const attemptsLeft = MAX_LOGIN_ATTEMPTS - (user.loginAttempts + 1);
     throw new ApiError(
       StatusCodes.UNAUTHORIZED,
-      `Invalid credentials. ${
-        attemptsLeft > 0
-          ? `${attemptsLeft} attempts left`
-          : "Account locked for 30 minutes"
-      }`
+      attemptsLeft > 0
+        ? `Invalid credentials. ${attemptsLeft} attempts left`
+        : "Account locked for 30 minutes"
     );
   }
 
   if (user.loginAttempts > 0 || user.lockUntil) {
-    await User.findByIdAndUpdate(user._id, {
-      $set: { loginAttempts: 0 },
-      $unset: { lockUntil: 1 },
-    });
+    await user.resetLoginAttempts();
   }
 
   user.lastLogin = new Date();
   await user.save({ validateBeforeSave: false });
 
-  const { access_token, refresh_token } = await generateTokens(user._id);
-
-  await user.save({ validateBeforeSave: false });
+  const { accessToken, refreshToken } = await generateAccessAndRefreshToken(
+    user._id
+  );
 
   return res
     .status(StatusCodes.OK)
-    .cookie("accessToken", access_token, options)
-    .cookie("refreshToken", refresh_token, options)
+    .cookie("accessToken", accessToken, cookieOptions)
+    .cookie("refreshToken", refreshToken, cookieOptions)
     .json({
       success: true,
       message: "User logged in successfully",
@@ -220,13 +218,13 @@ export const login = asyncHandler(async (req, res) => {
         avatar: user.avatar?.url,
         role: user.role,
         isVerified: user.isVerified,
-        access_token,
-        refresh_token,
+        accessToken,
+        refreshToken,
       },
     });
 });
 
-// Forgot Passowrd User
+// Forgot Password User
 export const forgotPassword = asyncHandler(async (req, res) => {
   const { email } = req.body;
 
@@ -244,12 +242,11 @@ export const forgotPassword = asyncHandler(async (req, res) => {
     });
   }
 
-  const resetToken = generateOTP();
-  const hashedResetToken = await user.hashOTP(resetToken);
-  const resetTokenExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
+  const resetOTP = generateOTP();
+  const resetOTPExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
-  user.resetPasswordToken = hashedResetToken;
-  user.resetPasswordExpiresAt = resetTokenExpiresAt;
+  user.resetPasswordOTP = await user.hashOTP(resetOTP);
+  user.resetPasswordExpiresAt = resetOTPExpiresAt;
   await user.save({ validateBeforeSave: false });
 
   try {
@@ -259,12 +256,12 @@ export const forgotPassword = asyncHandler(async (req, res) => {
       template: "passwordReset",
       data: {
         name: user.fullName,
-        otp: resetToken,
+        otp: resetOTP,
         expiresIn: "10 minutes",
       },
     });
   } catch (error) {
-    user.resetPasswordToken = undefined;
+    user.resetPasswordOTP = undefined;
     user.resetPasswordExpiresAt = undefined;
     await user.save({ validateBeforeSave: false });
     throw new ApiError(
@@ -283,11 +280,12 @@ export const forgotPassword = asyncHandler(async (req, res) => {
 export const resetPassword = asyncHandler(async (req, res) => {
   const { email, otp, newPassword } = req.body;
 
-  if (!email || !otp || !newPassword)
+  if (!email || !otp || !newPassword) {
     throw new ApiError(
       StatusCodes.BAD_REQUEST,
       "Email, OTP, and New Password are required."
     );
+  }
 
   if (newPassword.length < 8) {
     throw new ApiError(
@@ -308,9 +306,9 @@ export const resetPassword = asyncHandler(async (req, res) => {
 
   const user = await User.findOne({
     email,
-    resetPasswordToken: { $exists: true },
+    resetPasswordOTP: { $exists: true },
     resetPasswordExpiresAt: { $gt: Date.now() },
-  }).select("+resetPasswordToken");
+  }).select("+resetPasswordOTP");
 
   if (!user) {
     throw new ApiError(
@@ -336,7 +334,7 @@ export const resetPassword = asyncHandler(async (req, res) => {
   }
 
   user.password = newPassword;
-  user.resetPasswordToken = undefined;
+  user.resetPasswordOTP = undefined;
   user.resetPasswordExpiresAt = undefined;
   await user.save();
 
@@ -363,19 +361,20 @@ export const resetPassword = asyncHandler(async (req, res) => {
   });
 });
 
-// Reset Token
+// Refresh Token
 export const refreshAccessToken = asyncHandler(async (req, res) => {
-  const refreshToken = req.cookies?.refresh_token || req.body.refresh_token;
+  const incomingRefreshToken =
+    req.cookies?.refreshToken || req.body.refreshToken;
 
-  if (!refreshToken) {
+  if (!incomingRefreshToken) {
     throw new ApiError(StatusCodes.UNAUTHORIZED, "Unauthorized request");
   }
 
   try {
-    const decoaded = jwt.verify(refreshToken, REFRESH_TOKEN_SECRET);
+    const decoded = jwt.verify(incomingRefreshToken, REFRESH_TOKEN_SECRET);
 
     const isBlacklisted = await TokenBlacklist.findOne({
-      token: refreshToken,
+      token: incomingRefreshToken,
       type: "refresh",
     });
 
@@ -392,33 +391,33 @@ export const refreshAccessToken = asyncHandler(async (req, res) => {
       throw new ApiError(StatusCodes.UNAUTHORIZED, "Invalid refresh token");
     }
 
-    if (refreshToken !== user?.refreshToken) {
+    if (incomingRefreshToken !== user?.refreshToken) {
       throw new ApiError(
         StatusCodes.UNAUTHORIZED,
         "Refresh token is expired or already used"
       );
     }
 
-    const { access_token, refresh_token } = await generateAccessAndRefreshToken(
+    const { accessToken, refreshToken } = await generateAccessAndRefreshToken(
       user._id
     );
 
     await TokenBlacklist.create({
-      token: refreshToken,
+      token: incomingRefreshToken,
       type: "refresh",
       userId: user._id,
     });
 
     return res
       .status(StatusCodes.OK)
-      .cookie("accessToken", access_token, options)
-      .cookie("refreshToken", refresh_token, options)
+      .cookie("accessToken", accessToken, cookieOptions)
+      .cookie("refreshToken", refreshToken, cookieOptions)
       .json({
         success: true,
         message: "Tokens refreshed successfully",
         data: {
-          access_token,
-          refresh_token,
+          accessToken,
+          refreshToken,
         },
       });
   } catch (error) {
@@ -432,12 +431,9 @@ export const refreshAccessToken = asyncHandler(async (req, res) => {
   }
 });
 
-// Logout Password User
+// Logout User
 export const logout = asyncHandler(async (req, res) => {
   const { refreshToken } = req.cookies;
-
-  res.clearCookie("access_token", options);
-  res.clearCookie("refresh_token", options);
 
   if (!refreshToken) {
     throw new ApiError(StatusCodes.BAD_REQUEST, "Refresh token is required.");
@@ -452,10 +448,15 @@ export const logout = asyncHandler(async (req, res) => {
     });
     await User.findByIdAndUpdate(decoded._id, {
       $unset: { refreshToken: 1 },
+      $inc: { tokenVersion: 1 },
     });
   } catch (error) {
-    console.error("Error blacklisting refresh token:", error);
+    console.error("Error during logout:", error);
   }
+
+  res.clearCookie("accessToken", cookieOptions);
+  res.clearCookie("refreshToken", cookieOptions);
+
   return res.status(StatusCodes.OK).json({
     success: true,
     message: "Logged out successfully",
@@ -480,7 +481,7 @@ export const verifyEmail = asyncHandler(async (req, res) => {
     throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid or expired OTP");
   }
 
-  const isOTPValid = await bcrypt.compare(otp, user.otp);
+  const isOTPValid = await user.compareOTP(otp);
   if (!isOTPValid) {
     throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid OTP");
   }
@@ -552,155 +553,4 @@ export const resendVerification = asyncHandler(async (req, res) => {
       "If an account exists with this email, a verification OTP has been sent",
   });
 });
-
-// Get User Profile
-export const getProfile = () =>
-  asyncHandler(async (req, res) => {
-    const user = await User.findById(req.user._id);
-    return res.status(StatusCodes.OK).json({
-      success: true,
-      data: {
-        user: {
-          id: user._id,
-          fullName: user.fullName,
-          userName: user.userName,
-          email: user.email,
-          avatar: user.avatar?.url,
-          role: user.role,
-          isVerified: user.isVerified,
-          createdAt: user.createdAt,
-        },
-      },
-    });
-  });
-
-// Update User Profile
-export const updateProfile = asyncHandler(async (req, res) => {
-  const { fullName, userName } = req.body;
-
-  avatar = await cloudinaryFileUpload(req.file.path, "avatars");
-
-  if (!avatar) {
-    throw new ApiError(StatusCodes.BAD_REQUEST, "Avatar upload failed");
-  }
-
-  const updateData = { fullName, userName };
-
-  if (avatar) {
-    if (req.user.avatar?.public_id) {
-      await cloudinaryFileRemove(req.user.avatar.public_id);
-    }
-    updateData.avatar = {
-      public_id: avatar.public_id,
-      url: avatar.secure_url,
-    };
-  }
-
-  const user = await User.findByIdAndUpdate(req.user._id, updateData, {
-    new: true,
-    runValidators: true,
-  });
-
-  return res.status(StatusCodes.OK).json({
-    success: true,
-    message: "Profile updated successfully",
-    data: {
-      user: {
-        id: user._id,
-        fullName: user.fullName,
-        userName: user.userName,
-        email: user.email,
-        avatar: user.avatar?.url,
-      },
-    },
-  });
-});
-
-// Change Password
-export const changePassword = asyncHandler(async (req, res) => {
-  const { currentPassword, newPassword } = req.body;
-
-  if (!currentPassword || !newPassword) {
-    throw new ApiError(
-      StatusCodes.BAD_REQUEST,
-      "Current and new password are required"
-    );
-  }
-
-  if (currentPassword === newPassword) {
-    throw new ApiError(
-      StatusCodes.BAD_REQUEST,
-      "New password must be different from current password"
-    );
-  }
-
-  const passwordRegex =
-    /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
-  if (!passwordRegex.test(newPassword)) {
-    throw new ApiError(
-      StatusCodes.BAD_REQUEST,
-      "Password must contain at least 8 characters, including uppercase, lowercase, number and special character"
-    );
-  }
-
-  const user = await User.findById(req.user._id).select("+password");
-
-  const isPasswordValid = await user.comparePassword(currentPassword);
-  if (!isPasswordValid) {
-    throw new ApiError(
-      StatusCodes.UNAUTHORIZED,
-      "Current password is incorrect"
-    );
-  }
-
-  user.password = newPassword;
-  await user.save();
-
-  try {
-    await sendEmail({
-      email: user.email,
-      subject: "Password Changed",
-      template: "passwordChanged",
-      data: {
-        name: user.fullName,
-        timestamp: new Date().toLocaleString(),
-      },
-    });
-  } catch (error) {
-    console.error("Password change notification failed:", error);
-  }
-
-  return res.status(StatusCodes.OK).json({
-    success: true,
-    message: "Password changed successfully",
-  });
-});
-
-// Delete Account
-export const deleteAccount = asyncHandler(async (req, res) => {
-  const { password } = req.body;
-
-  if (!password) {
-    throw new ApiError(StatusCodes.BAD_REQUEST, "Password is required");
-  }
-
-  const user = await User.findById(req.user._id).select("+password");
-  const isPasswordValid = await user.comparePassword(password);
-  if (!isPasswordValid) {
-    throw new ApiError(StatusCodes.UNAUTHORIZED, "Password is incorrect");
-  }
-
-  if (user.avatar?.public_id) {
-    await cloudinaryFileRemove(user.avatar.public_id);
-  }
-
-  await User.findByIdAndDelete(req.user._id);
-
-  res.clearCookie("access_token", cookieOptions);
-  res.clearCookie("refresh_token", cookieOptions);
-
-  return res.status(StatusCodes.OK).json({
-    success: true,
-    message: "Account deleted successfully",
-  });
-});
+export { authLimiter, passwordResetLimiter };
