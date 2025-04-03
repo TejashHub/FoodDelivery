@@ -3,17 +3,17 @@
  * @license Apache-2.0
  */
 
-import User from "../../model/user.model.js";
+import User from "../../models/user.model.js";
 import jwt from "jsonwebtoken";
 import generateOTP from "../../utils/otpGenerator.js";
 import sendEmail from "../../utils/nodemailer.js";
 import rateLimit from "express-rate-limit";
 import bcrypt from "bcryptjs";
-import asyncHandler from "../../middleware/asyncHandler.middleware.js";
-import { TokenBlacklist } from "../../model/user.model.js";
+import asyncHandler from "../../middlewares/asyncHandler.middleware.js";
+import { TokenBlacklist } from "../../models/user.model.js";
 import { ApiError } from "../../errors/ApiError.js";
 import { StatusCodes } from "http-status-codes";
-import { REFRESH_TOKEN_SECRET } from "../../constant/constant.js";
+import { REFRESH_TOKEN_SECRET } from "../../constants/constant.js";
 import {
   cloudinaryFileUpload,
   cloudinaryFileRemove,

@@ -6,7 +6,7 @@
 import app from "./app/app.js";
 import dotenv from "dotenv";
 import connectDB from "./db/connect.js";
-import { PORT, MONGO_URI, MONGO_DB } from "./constant/constant.js";
+import { PORT, MONGO_URI, MONGO_DB } from "./constants/constant.js";
 
 dotenv.config({
   path: "./.env",

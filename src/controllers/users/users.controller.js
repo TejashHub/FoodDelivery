@@ -3,11 +3,11 @@
  * @license Apache-2.0
  */
 
-import User from "../../model/user.model.js";
+import User from "../../models/user.model.js";
 import sendEmail from "../../utils/nodemailer.js";
 import { ApiError } from "../../errors/ApiError.js";
 import { StatusCodes } from "http-status-codes";
-import asyncHandler from "../../middleware/asyncHandler.middleware.js";
+import asyncHandler from "../../middlewares/asyncHandler.middleware.js";
 import {
   cloudinaryFileUpload,
   cloudinaryFileRemove,

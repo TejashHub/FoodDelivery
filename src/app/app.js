@@ -7,9 +7,9 @@ import express from "express";
 import cookieParser from "cookie-parser";
 import cors from "cors";
 
-import { CORS_ORIGIN } from "../constant/constant.js";
-import router from "../router/route.js";
-import notFound from "../middleware/notFound.middleware.js";
+import { CORS_ORIGIN } from "../constants/constant.js";
+import router from "../routes/route.js";
+import notFound from "../middlewares/notFound.middleware.js";
 
 const app = express();
 

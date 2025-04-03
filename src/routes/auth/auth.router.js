@@ -15,9 +15,9 @@ import {
   resetPassword,
   authLimiter,
   passwordResetLimiter,
-} from "../../controller/auth/auth.controller.js";
-import { authMiddleware } from "../../middleware/auth.middleware.js";
-import upload from "../../middleware/multer.middleware.js";
+} from "../../controllers/auth/auth.controller.js";
+import { authMiddleware } from "../../middlewares/auth.middleware.js";
+import upload from "../../middlewares/multer.middleware.js";
 
 const router = express.Router();
 

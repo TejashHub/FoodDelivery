@@ -2,7 +2,7 @@ import nodemailer from "nodemailer";
 import hbs from "nodemailer-express-handlebars";
 import path from "path";
 import { fileURLToPath } from "url";
-import { USER_EMAIL_ID, USER_EMAIL_PASSWORD } from "../constant/constant.js";
+import { USER_EMAIL_ID, USER_EMAIL_PASSWORD } from "../constants/constant.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

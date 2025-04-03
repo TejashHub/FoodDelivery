@@ -4,12 +4,12 @@
  */
 
 import jwt from "jsonwebtoken";
-import User from "../model/user.model.js";
-import asyncHandler from "../middleware/asyncHandler.middleware.js";
-import { ACCESS_TOKEN_SECRET } from "../constant/constant.js";
+import User from "../models/user.model.js";
+import asyncHandler from "./asyncHandler.middleware.js";
+import { ACCESS_TOKEN_SECRET } from "../constants/constant.js";
 import { ApiError } from "../errors/ApiError.js";
 import { StatusCodes } from "http-status-codes";
-import { TokenBlacklist } from "../model/user.model.js";
+import { TokenBlacklist } from "../models/user.model.js";
 
 export const authMiddleware = asyncHandler(async (req, _, next) => {
   try {

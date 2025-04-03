@@ -1,6 +1,5 @@
-import User from "../../model/user.model.js";
-import { TokenBlacklist } from "../../model/user.model.js";
-import { ApiError } from "../../errors/ApiError.js";
+import User from "../../models/user.model.js";
+import { TokenBlacklist } from "../../models/user.model.js";
 import { StatusCodes } from "http-status-codes";
 import { ApiError } from "../../errors/ApiError.js";
 

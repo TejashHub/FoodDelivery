@@ -13,7 +13,7 @@ import {
   REFRESH_TOKEN_EXPIRES_IN,
   ACCOUNT_LOCK_DURATION,
   MAX_LOGIN_ATTEMPTS,
-} from "../constant/constant.js";
+} from "../constants/constant.js";
 import uniqueValidator from "mongoose-unique-validator";
 
 const tokenBlacklistSchema = new mongoose.Schema({
