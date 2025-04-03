@@ -12,6 +12,7 @@ import resturantRouter from "./restaurant/restaurant.route.js";
 import reviewRouter from "./review/review.route.js";
 import dishRouter from "./review/dish.route.js";
 import addressRouter from "./address/address.route.js";
+import cartsRouter from "./carts/carts.route.js";
 
 const router = express.Router();
 
@@ -22,5 +23,6 @@ router.use("/restaurant", resturantRouter);
 router.use("/review", reviewRouter);
 router.use("/dish", dishRouter);
 router.use("/address", addressRouter);
+router.use("/carts", cartsRouter);
 
 export default router;
