@@ -1,3 +1,8 @@
+/**
+ * @copyright 2025 Payal Yadav
+ * @license Apache-2.0
+ */
+
 import User from "../../models/user.model.js";
 import { TokenBlacklist } from "../../models/user.model.js";
 import { StatusCodes } from "http-status-codes";

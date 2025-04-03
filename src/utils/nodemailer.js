@@ -1,3 +1,8 @@
+/**
+ * @copyright 2025 Payal Yadav
+ * @license Apache-2.0
+ */
+
 import nodemailer from "nodemailer";
 import hbs from "nodemailer-express-handlebars";
 import path from "path";
