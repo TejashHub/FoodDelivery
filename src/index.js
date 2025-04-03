@@ -6,7 +6,7 @@
 import app from "./app/app.js";
 import dotenv from "dotenv";
 import connectDB from "./db/connect.js";
-import { PORT, MONGO_URI, MONGO_DB } from "./constants/constant.js";
+import { NODE_ENV, PORT, MONGO_URI, MONGO_DB } from "./constants/constant.js";
 
 dotenv.config({
   path: "./.env",
@@ -14,11 +14,11 @@ dotenv.config({
 
 connectDB(MONGO_URI, MONGO_DB)
   .then(() => {
-    app.listen(3000, () => {
-      console.log(`Server is running on port http://localhost:${PORT}`);
+    app.listen(PORT || 3000, () => {
+      console.log(`Server running on port http://localhost:${PORT}`);
     });
   })
-  .catch(() => {
-    console.log(`Server connection failed: ${error}`);
+  .catch((error) => {
+    console.error(`Server connection failed: ${error.message}`);
     process.exit(1);
   });

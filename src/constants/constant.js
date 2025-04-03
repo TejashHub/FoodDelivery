@@ -4,6 +4,7 @@
  */
 
 // Port for the application to listen on
+export const NODE_ENV = process.env.NODE_ENV;
 export const PORT = process.env.PORT || 8000;
 
 // MongoDB URI and Database name

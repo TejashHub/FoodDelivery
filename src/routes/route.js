@@ -5,14 +5,16 @@
 
 import express from "express";
 
-import authRoutes from "./auth/auth.router.js";
-import adminRoutes from "./admin/admin.router.js";
-import userRoutes from "./users/users.router.js";
+import authRoutes from "./auth/auth.route.js";
+import adminRoutes from "./admin/admin.route.js";
+import userRoutes from "./users/users.route.js";
+import resturantRouter from "./restaurant/restaurant.route.js";
 
 const router = express.Router();
 
 router.use("/auth", authRoutes);
 router.use("/admin", adminRoutes);
 router.use("/user", userRoutes);
+router.use("/restaurant", resturantRouter);
 
 export default router;
