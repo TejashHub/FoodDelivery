@@ -9,6 +9,7 @@ import authRoutes from "./auth/auth.route.js";
 import adminRoutes from "./admin/admin.route.js";
 import userRoutes from "./users/users.route.js";
 import resturantRouter from "./restaurant/restaurant.route.js";
+import reviewRouter from "./review/review.route.js";
 
 const router = express.Router();
 
@@ -16,5 +17,6 @@ router.use("/auth", authRoutes);
 router.use("/admin", adminRoutes);
 router.use("/user", userRoutes);
 router.use("/restaurant", resturantRouter);
+router.use("/review", reviewRouter);
 
 export default router;
