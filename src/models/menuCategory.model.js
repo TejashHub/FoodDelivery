@@ -3,7 +3,7 @@
  * @license Apache-2.0
  */
 
-import mongoose from "mongoose";
+import mongoose, { Schema } from "mongoose";
 
 const menuCategorySchema = new mongoose.Schema(
   {
@@ -88,7 +88,6 @@ const menuCategorySchema = new mongoose.Schema(
 menuCategorySchema.index({ restaurant: 1, displayOrder: 1 });
 menuCategorySchema.index({ restaurant: 1, isFeatured: 1 });
 menuCategorySchema.index({ restaurant: 1, isPopular: 1 });
-menuCategorySchema.index({ slug: 1 }, { unique: true });
 
 menuCategorySchema.virtual("featuredItems", {
   ref: "MenuItem",

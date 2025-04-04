@@ -136,4 +136,20 @@ router
   .route("/status/:id")
   .get(authMiddleware, RestaurantController.getRestaurantStatus);
 
+// Categories Endpoints Routesss
+router
+  .route("/:id/categories")
+  .get(RestaurantController.getAllCategoryResturant);
+router.route("/:id/categories/active").get(RestaurantController.activeCategory);
+router
+  .route("/:id/categories/featured")
+  .get(RestaurantController.featuredCategory);
+router
+  .route("/:id/categories/popular")
+  .get(RestaurantController.popularCategory);
+router
+  .route("/:id/categories/available-now")
+  .get(RestaurantController.availableCategory);
+router.route("/:id/categories/stats").get(RestaurantController.statsCategory);
+
 export default router;

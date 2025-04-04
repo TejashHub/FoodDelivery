@@ -4,29 +4,26 @@
  */
 
 import express from "express";
-import {
-  createReview,
-  getAllReview,
-  getReview,
-  updateReview,
-  deleteReview,
-  deleteManyReview,
-  getReviewByRestaurant,
-  getReviewByUser,
-} from "../../controllers/review/review.controller.js";
+import { ReviewController } from "../../controllers/reviews/reviews.controller.js";
 import { authMiddleware } from "../../middlewares/auth.middleware.js";
 
 const router = express.Router();
 
 router.use(authMiddleware);
 
-router.route("/").post(createReview).get(getAllReview);
-
-router.route("/:id").get(getReview).patch(updateReview).delete(deleteReview);
-
-router.route("/bulk/delete").delete(deleteManyReview);
-
-router.route("/restaurant/:restaurantId").get(getReviewByRestaurant);
-router.route("/user/:userId").get(getReviewByUser);
+router
+  .route("/")
+  .post(ReviewController.createReview)
+  .get(ReviewController.getAllReview);
+router
+  .route("/:id")
+  .get(ReviewController.getReview)
+  .patch(ReviewController.updateReview)
+  .delete(ReviewController.deleteReview);
+router.route("/bulk/delete").delete(ReviewController.deleteManyReview);
+router
+  .route("/restaurant/:restaurantId")
+  .get(ReviewController.getReviewByRestaurant);
+router.route("/user/:userId").get(ReviewController.getReviewByUser);
 
 export default router;

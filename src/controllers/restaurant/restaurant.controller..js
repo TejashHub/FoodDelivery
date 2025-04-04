@@ -1552,6 +1552,15 @@ const RestaurantController = {
       data: foodTypes.map((ft) => ft.foodType),
     });
   }),
+
+  // Categories Endpoints
+  getAllCategoryResturant: asyncHandler(async (req, res) => {}),
+  activeCategory: asyncHandler(async (req, res) => {}),
+  featuredCategory: asyncHandler(async (req, res) => {}),
+  popularCategory: asyncHandler(async (req, res) => {}),
+  popularCategory: asyncHandler(async (req, res) => {}),
+  availableCategory: asyncHandler(async (req, res) => {}),
+  statsCategory: asyncHandler(async (req, res) => {}),
 };
 
 export default RestaurantController;

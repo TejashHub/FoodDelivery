@@ -5,7 +5,7 @@
 
 import mongoose from "mongoose";
 
-const dishSchema = new mongoose(
+const dishesSchema = new mongoose.Schema(
   {
     name: {
       type: String,
@@ -28,6 +28,6 @@ const dishSchema = new mongoose(
   { timestamps: true }
 );
 
-const Dish = mongoose.model("Dish", dishSchema);
+const Dishes = mongoose.model("Dish", dishesSchema);
 
-export default Dish;
+export default Dishes;

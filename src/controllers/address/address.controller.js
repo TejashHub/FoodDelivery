@@ -1,6 +1,6 @@
 import Address from "../../models/address.model.js";
 import asyncHandler from "../../middlewares/asyncHandler.middleware.js";
-import ApiError from "../../errors/ApiError.js";
+import { ApiError } from "../../errors/ApiError.js";
 import { StatusCodes } from "http-status-codes";
 
 export const AddressController = {

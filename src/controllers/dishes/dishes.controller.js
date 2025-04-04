@@ -1,6 +1,6 @@
-import Dish from "../../models/dish.model";
-import asyncHandler from "../../middlewares/asyncHandler.middleware";
-import { ApiError } from "../../errors/ApiError";
+import Dishes from "../../models/dishes.model.js";
+import asyncHandler from "../../middlewares/asyncHandler.middleware.js";
+import { ApiError } from "../../errors/ApiError.js";
 import { StatusCodes } from "http-status-codes";
 import { cloudinaryFileUpload } from "../../utils/cloudinary.js";
 
@@ -12,8 +12,8 @@ export const DishesController = {
     const skip = (page - 1) * limit;
 
     const [dishes, total] = await Promise.all([
-      Dish.find().skip(skip).limit(limit).lean(),
-      Dish.countDocuments(),
+      Dishes.find().skip(skip).limit(limit).lean(),
+      Dishes.countDocuments(),
     ]);
 
     return res.status(StatusCodes.OK).json({
@@ -40,7 +40,7 @@ export const DishesController = {
     }
 
     const [dishes, total] = await Promise.all([
-      Dish.find({
+      Dishes.find({
         $or: [
           { name: { $regex: query, $options: "i" } },
           { description: { $regex: query, $options: "i" } },
@@ -48,7 +48,7 @@ export const DishesController = {
       })
         .skip(skip)
         .limit(limit),
-      Dish.countDocuments({
+      Dishes.countDocuments({
         $or: [
           { name: { $regex: query, $options: "i" } },
           { description: { $regex: query, $options: "i" } },
@@ -79,8 +79,8 @@ export const DishesController = {
     }
 
     const [dishes, total] = await Promise.all([
-      Dish.find({ category }).skip(skip).limit(limit),
-      Dish.countDocuments({ category }),
+      Dishes.find({ category }).skip(skip).limit(limit),
+      Dishes.countDocuments({ category }),
     ]);
 
     return res.status(StatusCodes.OK).json({
@@ -110,7 +110,7 @@ export const DishesController = {
       throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid category");
     }
 
-    const dish = await Dish.create(req.body);
+    const dish = await Dishes.create(req.body);
 
     return res.status(StatusCodes.CREATED).json({
       success: true,
@@ -127,7 +127,7 @@ export const DishesController = {
       throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid category");
     }
 
-    const dish = await Dish.findByIdAndUpdate(id, req.body, {
+    const dish = await Dishes.findByIdAndUpdate(id, req.body, {
       new: true,
       runValidators: true,
     });
@@ -146,7 +146,7 @@ export const DishesController = {
   toggleAvailability: asyncHandler(async (req, res) => {
     const { id } = req.params;
 
-    const dish = await Dish.findById(id);
+    const dish = await Dishes.findById(id);
     if (!dish) {
       throw new ApiError(StatusCodes.NOT_FOUND, "Dish not found");
     }
@@ -169,7 +169,7 @@ export const DishesController = {
       throw new ApiError(StatusCodes.BAD_REQUEST, "Image file is required");
     }
 
-    const dishExists = await Dish.exists({ _id: id });
+    const dishExists = await Dishes.exists({ _id: id });
     if (!dishExists) {
       throw new ApiError(StatusCodes.NOT_FOUND, "Dish not found");
     }
@@ -182,7 +182,11 @@ export const DishesController = {
       );
     }
 
-    const dish = await Dish.findByIdAndUpdate(id, { imageUrl }, { new: true });
+    const dish = await Dishes.findByIdAndUpdate(
+      id,
+      { imageUrl },
+      { new: true }
+    );
 
     return res.status(StatusCodes.OK).json({
       success: true,

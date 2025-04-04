@@ -3,10 +3,9 @@ import {
   authRoles,
   authMiddleware,
 } from "../../middlewares/auth.middleware.js";
-import { AddressController } from "../../controllers/address/address.controller";
+import { AddressController } from "../../controllers/address/address.controller.js";
 
 const router = express.Router();
-
 router
   .route("/")
   .get(AddressController.getAllAddress)

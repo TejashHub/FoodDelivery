@@ -1,7 +1,7 @@
 import Review from "../../models/Review.model.js";
 import asyncHandler from "../../middlewares/asyncHandler.middleware.js";
 import { StatusCodes } from "http-status-codes";
-import ApiError from "../../errors/ApiError.js";
+import { ApiError } from "../../errors/ApiError.js";
 import mongoose from "mongoose";
 
 export const ReviewController = {
