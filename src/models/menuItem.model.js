@@ -72,6 +72,11 @@ const menuItemSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+menuItemSchema.index({ price: 1 });
+menuItemSchema.index({ isVeg: 1 });
+menuItemSchema.index({ dietaryTags: 1 });
+menuItemSchema.index({ createdAt: -1 });
+menuItemSchema.index({ orderCount: -1 });
 menuItemSchema.index({
   name: "text",
   description: "text",
