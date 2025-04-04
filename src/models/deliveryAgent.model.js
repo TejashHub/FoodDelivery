@@ -28,6 +28,6 @@ const deliveryAgentSchema = mongoose.Schema(
   { timestamps: true }
 );
 
-const deliveryAgent = mongoose.model("deliveryAgent", deliveryAgentSchema);
+const DeliveryAgent = mongoose.model("DeliveryAgent", deliveryAgentSchema);
 
-export default deliveryAgent;
+export default DeliveryAgent;

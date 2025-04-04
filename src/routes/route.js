@@ -16,6 +16,7 @@ import cartsRouter from "./carts/carts.route.js";
 import menuCategoryRoute from "./menuCategory/menuCategory.route.js";
 import couponRouter from "./cupons/cupons.route.js";
 import menuItemRouter from "./menuItem/menuItem.route.js";
+import deliveryAgentRouter from "./deliveryAgent/deliveryAgent.route.js";
 
 const router = express.Router();
 
@@ -30,5 +31,6 @@ router.use("/carts", cartsRouter);
 router.use("/categories", menuCategoryRoute);
 router.use("/cupon", couponRouter);
 router.use("/menu-items", menuItemRouter);
+router.use("/delivery-agents", deliveryAgentRouter);
 
 export default router;
