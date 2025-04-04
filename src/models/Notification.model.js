@@ -4,6 +4,7 @@
  */
 
 import mongoose from "mongoose";
+import asyncHandler from "express-async-handler";
 
 const notificationSchema = new mongoose.Schema(
   {
@@ -58,8 +59,8 @@ const notificationSchema = new mongoose.Schema(
         validator: function (value) {
           return value > Date.now();
         },
+        message: "Expiry date must be in the future",
       },
-      message: "Expiry date must be in the future",
     },
   },
   {
@@ -69,5 +70,3 @@ const notificationSchema = new mongoose.Schema(
 );
 
 const Notification = mongoose.model("Notification", notificationSchema);
-
-export default Notification;
