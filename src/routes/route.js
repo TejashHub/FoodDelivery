@@ -14,6 +14,7 @@ import dishRouter from "./dishes/dishes.route.js";
 import addressRouter from "./address/address.route.js";
 import cartsRouter from "./carts/carts.route.js";
 import menuCategoryRoute from "./menuCategory/menuCategory.route.js";
+import couponRouter from "./cupons/cupons.route.js";
 
 const router = express.Router();
 
@@ -26,5 +27,6 @@ router.use("/dish", dishRouter);
 router.use("/address", addressRouter);
 router.use("/carts", cartsRouter);
 router.use("/categories", menuCategoryRoute);
+router.use("/cupon", couponRouter);
 
 export default router;
