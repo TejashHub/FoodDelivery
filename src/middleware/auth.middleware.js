@@ -7,9 +7,9 @@ import jwt from "jsonwebtoken";
 import User from "../models/user.model.js";
 import asyncHandler from "./asyncHandler.middleware.js";
 import { ACCESS_TOKEN_SECRET } from "../constants/constant.js";
-import { ApiError } from "../errors/ApiError.js";
+import ApiError from "../utils/apiError.js";
 import { StatusCodes } from "http-status-codes";
-import { TokenBlacklist } from "../models/user.model.js";
+import TokenBlacklist from "../models/tokenBlacklist.model.js";
 
 export const authMiddleware = asyncHandler(async (req, _, next) => {
   try {

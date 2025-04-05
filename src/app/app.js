@@ -6,15 +6,19 @@
 import express from "express";
 import cookieParser from "cookie-parser";
 import cors from "cors";
+import helmet from "helmet";
+import compression from "compression";
 
 import { CORS_ORIGIN } from "../constants/constant.js";
 import router from "../routes/route.js";
-import notFound from "../middlewares/notFound.middleware.js";
+import notFound from "../middleware/notFound.middleware.js";
 
 const app = express();
 
-app.use(cookieParser());
+// Security Middleware
+app.use(helmet());
 
+// Enable CORS
 app.use(
   cors({
     origin: CORS_ORIGIN,
@@ -22,14 +26,23 @@ app.use(
   })
 );
 
+// Data Parsing
 app.use(express.json({ limit: "16kb" }));
-
 app.use(express.urlencoded({ extended: true, limit: "16kb" }));
 
+// Cookie Parser (after JSON body parser)
+app.use(cookieParser());
+
+// Gzip Compression
+app.use(compression());
+
+// Serve Static Files (Place BEFORE routes)
 app.use(express.static("./public"));
 
+// API Routes
 app.use("/api/v1", router);
 
+// Handle 404 Routes
 app.use(notFound);
 
 export default app;

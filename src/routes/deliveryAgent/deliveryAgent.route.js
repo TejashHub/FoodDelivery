@@ -5,10 +5,7 @@
 
 import express from "express";
 import { DeliveryAgentController } from "../../controllers/deliveryAgents/deliveryAgents.controller.js";
-import {
-  authMiddleware,
-  authRoles,
-} from "../../middlewares/auth.middleware.js";
+import { authMiddleware, authRoles } from "../../middleware/auth.middleware.js";
 
 const router = express.Router();
 

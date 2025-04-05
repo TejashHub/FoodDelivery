@@ -27,10 +27,10 @@ const transporter = nodemailer.createTransport({
 const handlebarOptions = {
   viewEngine: {
     extName: ".hbs",
-    partialsDir: path.join(__dirname, "../../public/template"),
+    partialsDir: path.join(__dirname, "../../src/emails"),
     defaultLayout: false,
   },
-  viewPath: path.join(__dirname, "../../public/template"),
+  viewPath: path.join(__dirname, "../../src/emails"),
   extName: ".hbs",
 };
 

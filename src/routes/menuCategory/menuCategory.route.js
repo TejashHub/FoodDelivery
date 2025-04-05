@@ -1,7 +1,4 @@
-import {
-  authRoles,
-  authMiddleware,
-} from "../../middlewares/auth.middleware.js";
+import { authRoles, authMiddleware } from "../../middleware/auth.middleware.js";
 import { MenuCategoryController } from "../../controllers/menuCategory/menuCategory.controller.js";
 import express from "express";
 

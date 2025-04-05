@@ -13,10 +13,15 @@ import {
   impersonateUser,
   getSystemStats,
 } from "../../controllers/admin/admin.controller.js";
+import { authMiddleware, authRoles } from "../../middleware/auth.middleware.js";
+import validation from "../../middleware/validation.middleware.js";
 import {
-  authMiddleware,
-  authRoles,
-} from "../../middlewares/auth.middleware.js";
+  getAllUsersSchema,
+  updateUserRoleSchema,
+  toggleUserStatusSchema,
+  impersonateUserSchema,
+  userProfileSchema,
+} from "../../validations/user.validation.js";
 
 const router = express.Router();
 
@@ -25,14 +30,20 @@ router.use(authMiddleware);
 router.use(authRoles("admin", "moderator"));
 
 // User management
-router.route("/users").get(getAllUsers);
+router.route("/users").get(validation(getAllUsersSchema), getAllUsers);
 router.route("/users/:id").get(getUserById);
 router.route("/users/:id").delete(authRoles("admin"), deleteUser);
-router.route("/users/:id/role").patch(authRoles("admin"), updateUserRole);
-router.route("/users/:id/status").patch(toggleUserStatus);
+router
+  .route("/users/:id/role")
+  .patch(authRoles("admin"), validation(updateUserRoleSchema), updateUserRole);
+router
+  .route("/users/:id/status")
+  .patch(validation(toggleUserStatusSchema), toggleUserStatus);
 
 // Admin tools
-router.route("/impersonate/:id").get(authRoles("admin"), impersonateUser);
-router.route("/stats").get(getSystemStats);
+router
+  .route("/impersonate/:id")
+  .get(authRoles("admin"), validation(impersonateUserSchema), impersonateUser);
+router.route("/stats").get(validation(userProfileSchema), getSystemStats);
 
 export default router;

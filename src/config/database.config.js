@@ -4,12 +4,14 @@
  */
 
 import mongoose from "mongoose";
+import logger from "../logger/winston.logger.js";
 
 const connectDB = async (url, dbName) => {
   try {
     await mongoose.connect(`${url}/${dbName}`);
+    logger.info(`\n MongoDB Connected!`);
   } catch (error) {
-    console.log(`Database connection failed : ${error}`);
+    logger.error(`Database connection failed : ${error}`);
     process.exit(1);
   }
 };

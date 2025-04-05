@@ -1,7 +1,7 @@
 import express from "express";
 import { DishesController } from "../../controllers/dishes/dishes.controller.js";
-import { authMiddleware } from "../../middlewares/auth.middleware.js";
-import upload from "../../middlewares/multer.middleware.js";
+import { authMiddleware } from "../../middleware/auth.middleware.js";
+import upload from "../../middleware/multer.middleware.js";
 
 const router = express.Router();
 

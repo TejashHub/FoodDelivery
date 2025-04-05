@@ -32,3 +32,21 @@ export const USER_EMAIL_PASSWORD = process.env.USER_EMAIL_PASSWORD;
 // Account Credentials
 export const ACCOUNT_LOCK_DURATION = 15 * 60 * 1000;
 export const MAX_LOGIN_ATTEMPTS = 5;
+
+// Roles && Max_Pagination Limit
+export const ROLES = ["user", "admin", "moderator"];
+export const MAX_PAGINATION_LIMIT = 100;
+
+// Cookie Configuration
+export const OPTIONS = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+  signed: false,
+};
+
+// Cache Configuration
+export const USER_CACHE_TTL = 3600;
+export const RATE_LIMIT_WINDOW = 3600;
+export const MAX_PASSWORD_ATTEMPTS = 5;

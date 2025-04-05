@@ -3,22 +3,22 @@
  * @license Apache-2.0
  */
 
-import app from "./app/app.js";
 import dotenv from "dotenv";
-import connectDB from "./db/connect.js";
-import { NODE_ENV, PORT, MONGO_URI, MONGO_DB } from "./constants/constant.js";
+import app from "./app/app.js";
+import connectDB from "./config/database.config.js";
+import { PORT, MONGO_URI, MONGO_DB } from "./constants/constant.js";
+import logger from "./logger/winston.logger.js";
 
-dotenv.config({
-  path: "./.env",
-});
+dotenv.config({ path: "./.env" });
 
 connectDB(MONGO_URI, MONGO_DB)
   .then(() => {
-    app.listen(PORT || 3000, () => {
-      console.log(`Server running on port http://localhost:${PORT}`);
+    const port = PORT || 3000;
+    app.listen(port, () => {
+      logger.info(`Server running on: http://localhost:${port}`);
     });
   })
   .catch((error) => {
-    console.error(`Server connection failed: ${error.message}`);
+    logger.error("Mongo db connect error: ", err);
     process.exit(1);
   });

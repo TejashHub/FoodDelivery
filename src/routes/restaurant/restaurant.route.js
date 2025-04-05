@@ -1,6 +1,6 @@
 import express from "express";
 import RestaurantController from "../../controllers/restaurant/restaurant.controller..js";
-import { authMiddleware } from "../../middlewares/auth.middleware.js";
+import { authMiddleware } from "../../middleware/auth.middleware.js";
 
 const router = express.Router();
 

@@ -1,8 +1,5 @@
 import express from "express";
-import {
-  authRoles,
-  authMiddleware,
-} from "../../middlewares/auth.middleware.js";
+import { authRoles, authMiddleware } from "../../middleware/auth.middleware.js";
 import { AddressController } from "../../controllers/address/address.controller.js";
 
 const router = express.Router();

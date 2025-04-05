@@ -4,6 +4,7 @@
  */
 
 import { v2 as cloudinary } from "cloudinary";
+import logger from "../logger/winston.logger.js";
 import fs from "fs";
 
 import {
@@ -18,7 +19,7 @@ cloudinary.config({
   api_secret: CLOUDINARY_API_SECRET,
 });
 
-const cloudinaryFileUpload = async (localFilePath) => {
+const uploadFileToCloudinary = async (localFilePath) => {
   try {
     if (!localFilePath) return null;
     const response = await cloudinary.uploader.upload(localFilePath, {
@@ -32,13 +33,13 @@ const cloudinaryFileUpload = async (localFilePath) => {
   }
 };
 
-const cloudinaryFileRemove = async (localFilePath) => {
+const removeFileToCloudinary = async (localFilePath) => {
   try {
     return await cloudinary.uploader.destroy(localFilePath);
   } catch (error) {
-    console.error("Error deleting image:", error);
+    logger.error("Error deleting image:", error);
     throw error;
   }
 };
 
-export { cloudinaryFileUpload, cloudinaryFileRemove };
+export { uploadFileToCloudinary, removeFileToCloudinary };
