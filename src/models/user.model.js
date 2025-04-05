@@ -137,9 +137,17 @@ userSchema.methods = {
   },
 
   compareOTP: async function (candidateOTP) {
-    if (!this.otp) throw new Error("OTP not found in user document");
-    if (!this.otpExpiry || this.otpExpiry < Date.now()) return false;
-    return await bcrypt.compare(candidateOTP, this.otp);
+    if (!this.otp) {
+      throw new Error("OTP not found in user document");
+    }
+
+    if (!this.otpExpiry || this.otpExpiry < Date.now()) {
+      console.log("OTP expired.");
+      return false;
+    }
+
+    const isMatch = await bcrypt.compare(candidateOTP, this.otp);
+    return isMatch;
   },
 
   resetCompareOTP: async function (candidateOTP) {

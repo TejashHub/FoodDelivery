@@ -1,9 +1,12 @@
 /**
  * @copyright 2025 Payal Yadav
  * @license Apache-2.0
+ * @description Authentication routes for user management
  */
 
 import express from "express";
+
+// Core dependencies
 import {
   register,
   login,
@@ -13,10 +16,18 @@ import {
   resendVerification,
   forgotPassword,
   resetPassword,
-} from "../../controllers/auth/auth.controller.js";
-import { authMiddleware } from "../../middleware/auth.middleware.js";
-import upload from "../../middleware/multer.middleware.js";
-import validation from "../../middleware/validation.middleware.js";
+} from "../controllers/authentication.controller.js";
+
+// Security middleware
+import { authMiddleware } from "../middleware/auth.middleware.js";
+import upload from "../middleware/multer.middleware.js";
+import validation from "../middleware/validation.middleware.js";
+import {
+  authLimiter,
+  passwordResetLimiter,
+} from "../middleware/rateLimiter.middleware.js";
+
+// Request validation schemas
 import {
   loginSchema,
   registerSchema,
@@ -24,17 +35,18 @@ import {
   forgotPasswordSchema,
   resetPasswordSchema,
   resetEmailVerificationSchema,
-} from "../../validations/user.validation.js";
-import {
-  authLimiter,
-  passwordResetLimiter,
-} from "../../middleware/rateLimiter.middleware.js";
+} from "../validations/user.validation.js";
 
 const router = express.Router();
 
-// Public Routes
+// --------------------------
+// Public Routes (No auth required)
+// --------------------------
+
+// User authentication
 router.route("/login").post(authLimiter, validation(loginSchema), login);
 
+// User registration with avatar upload
 router
   .route("/register")
   .post(
@@ -44,23 +56,29 @@ router
     register
   );
 
+// Email verification flow
 router.route("/verify-email").post(validation(verifyEmailSchema), verifyEmail);
 
+// Password recovery system
 router
   .route("/forgot-password")
   .post(passwordResetLimiter, validation(forgotPasswordSchema), forgotPassword);
-
 router
   .route("/reset-password")
   .post(passwordResetLimiter, validation(resetPasswordSchema), resetPassword);
 
+// Verification retry
 router
   .route("/resend-verification")
   .post(validation(resetEmailVerificationSchema), resendVerification);
 
+// --------------------------
 // Protected Routes
-router.route("/logout").post(authMiddleware, logout);
+// --------------------------
 
-router.route("/refresh-token").get(authMiddleware, refreshAccessToken);
+router.use(authMiddleware);
+
+router.route("/logout").post(logout);
+router.route("/refresh-token").get(refreshAccessToken);
 
 export default router;

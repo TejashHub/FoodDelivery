@@ -10,16 +10,16 @@ import {
   updateAvatar,
   changePassword,
   deleteAccount,
-} from "../../controllers/users/users.controller.js";
-import { authMiddleware } from "../../middleware/auth.middleware.js";
-import upload from "../../middleware/multer.middleware.js";
-import validation from "../../middleware/validation.middleware.js";
+} from "../controllers/users.controller.js";
+import { authMiddleware } from "../middleware/auth.middleware.js";
+import upload from "../middleware/multer.middleware.js";
+import validation from "../middleware/validation.middleware.js";
 import {
   updateProfileScheme,
   updateAvatarSchema,
   changePasswordSchema,
   deleteAccountSchema,
-} from "../../validations/user.validation.js";
+} from "../validations/user.validation.js";
 
 const router = express.Router();
 

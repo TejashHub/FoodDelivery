@@ -4,66 +4,38 @@
  */
 
 import { StatusCodes } from "http-status-codes";
-import User from "../../models/user.model.js";
-import sendEmail from "../../utils/email.js";
-import ApiError from "../../utils/apiError.js";
-import ApiResponse from "../../utils/apiResponse.js";
-import asyncHandler from "../../middleware/asyncHandler.middleware.js";
+
+import User from "../models/user.model.js";
+
 import {
   uploadFileToCloudinary,
   removeFileToCloudinary,
-} from "../../config/cloudinary.config.js";
-import redisClient from "../../config/redis.config.js";
+} from "../config/cloudinary.config.js";
+
+import asyncHandler from "../middleware/asyncHandler.middleware.js";
+
 import {
-  cookieOptions,
+  OPTIONS,
   USER_CACHE_TTL,
   RATE_LIMIT_WINDOW,
   MAX_PASSWORD_ATTEMPTS,
-} from "../../constants/constant.js";
+} from "../constants/constant.js";
 
-// Helper: Redis Pipeline Executor
-const redisPipeline = async (...commands) => {
-  const pipeline = redisClient.pipeline();
-  commands.forEach(([cmd, ...args]) => pipeline[cmd](...args));
-  return pipeline.exec();
-};
+import sendEmail from "../utils/email.js";
+import ApiError from "../utils/apiError.js";
+import ApiResponse from "../utils/apiResponse.js";
 
 // Get User Profile
 export const getProfile = asyncHandler(async (req, res) => {
-  const cacheKey = `user:${req.user._id}`;
-
-  try {
-    const cachedUser = await redisClient.hGetAll(cacheKey);
-    if (cachedUser && Object.keys(cachedUser).length) {
-      return new ApiResponse(StatusCodes.OK, {
-        ...cachedUser,
-        createdAt: new Date(cachedUser.createdAt),
-      }).send(res);
-    }
-  } catch (error) {
-    console.error("Cache read error:", error);
-  }
-
   const user = await User.findById(req.user._id);
 
   if (!user) throw new ApiError(StatusCodes.NOT_FOUND, "User not found");
 
-  try {
-    await redisClient.hSet(cacheKey, {
-      id: user._id.toString(),
-      fullName: user.fullName,
-      userName: user.userName,
-      email: user.email,
-      avatar: user.avatar?.url || "",
-      role: user.role,
-      isVerified: user.isVerified.toString(),
-      createdAt: user.createdAt.toISOString(),
-    });
-    await redisClient.expire(cacheKey, USER_CACHE_TTL);
-  } catch (error) {
-    console.error("Cache write error:", error);
-  }
-  return new ApiResponse(StatusCodes.OK, user).send(res);
+  return new ApiResponse(
+    StatusCodes.OK,
+    { user },
+    "All User get Successfully"
+  ).send(res);
 });
 
 // Update User Profile

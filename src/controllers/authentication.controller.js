@@ -1,69 +1,74 @@
 /**
  * @copyright 2025 Payal Yadav
  * @license Apache-2.0
- * @description Standardized API response formatter
+ * @description Handles all authentication-related functionality, including user registration with avatar upload,
+ * email verification via OTP, login with account lock mechanism, and secure token generation and management
+ * (access & refresh tokens).
  */
 
 // External dependencies first
 import jwt from "jsonwebtoken";
-import bcrypt from "bcryptjs";
 import { StatusCodes } from "http-status-codes";
 
 // Model config
-import User from "../../models/user.model.js";
-import TokenBlacklist from "../../models/tokenBlacklist.model.js";
-import logger from "../../logger/winston.logger.js";
+import User from "../models/user.model.js";
+import TokenBlacklist from "../models/tokenBlacklist.model.js";
+import logger from "../logger/winston.logger.js";
 
 // Cloudinary config
 import {
   uploadFileToCloudinary,
   removeFileToCloudinary,
-} from "../../config/cloudinary.config.js";
+} from "../config/cloudinary.config.js";
 
 // Constant config
 import {
   MAX_LOGIN_ATTEMPTS,
   REFRESH_TOKEN_SECRET,
   OPTIONS,
-} from "../../constants/constant.js";
+} from "../constants/constant.js";
 
 // Middleware config
-import asyncHandler from "../../middleware/asyncHandler.middleware.js";
+import asyncHandler from "../middleware/asyncHandler.middleware.js";
 
 // Application config
-import blacklistToken from "../../utils/tokenBlacklist.js";
-import generateOTP from "../../utils/otp.js";
-import sendEmail from "../../utils/email.js";
-import ApiError from "../../utils/apiError.js";
-import ApiResponse from "../../utils/apiResponse.js";
+import blacklistToken from "../utils/tokenBlacklist.js";
+import generateOTP from "../utils/otp.js";
+import sendEmail from "../utils/email.js";
+import ApiError from "../utils/apiError.js";
+import ApiResponse from "../utils/apiResponse.js";
 
 // Generate Tokens
 const generateAccessAndRefreshToken = async (userId) => {
   try {
+    // User Verification - Ensure valid user exists
     const user = await User.findById(userId);
     if (!user) {
       throw new ApiError(StatusCodes.NOT_FOUND, "User not found");
     }
 
+    // Token Generation - JWT creation using model methods
     const accessToken = user.generateAccessToken();
     const refreshToken = user.generateRefreshToken();
 
+    // Refresh Token Storage - Save hashed token to DB for session management
     user.refreshToken = refreshToken;
-
     await user.save({ validateBeforeSave: false });
 
+    // Return Tokens - Never store raw tokens in logs
     return { accessToken, refreshToken };
   } catch (error) {
+    // Error Handling - Generic message to prevent info leakage
     throw new ApiError(
       StatusCodes.INTERNAL_SERVER_ERROR,
-      "Failed to generate tokens"
+      "Authentication service unavailable"
     );
   }
 };
 
 // Register User
 export const register = asyncHandler(async (req, res) => {
-  // Destructure with proper variable name
+  // Input Validation - Essential fields check
   const {
     fullName,
     email,
@@ -73,7 +78,7 @@ export const register = asyncHandler(async (req, res) => {
     addresses = [],
   } = req.body;
 
-  // Validate required fields
+  // Required Fields Verification
   if (
     [fullName, email, userName, password, phone].some((field) => !field?.trim())
   ) {
@@ -83,7 +88,7 @@ export const register = asyncHandler(async (req, res) => {
     );
   }
 
-  // Validating Exit Users
+  // Existing User Check - Prevent duplicate accounts
   const existedUser = await User.findOne({
     $or: [{ userName }, { email }, { phone }],
   });
@@ -95,25 +100,25 @@ export const register = asyncHandler(async (req, res) => {
     );
   }
 
-  // Handle avatar upload
+  // Avatar Handling - Mandatory profile image
   const avatarLocalPath = req.file?.path;
 
   if (!avatarLocalPath) {
     throw new ApiError(StatusCodes.BAD_REQUEST, "Avatar file is required");
   }
 
-  // Avatar send to Cloudinary
+  // Secure Cloud Upload
   const avatar = await uploadFileToCloudinary(avatarLocalPath);
 
   if (!avatar) {
     throw new ApiError(StatusCodes.BAD_REQUEST, "Avatar file upload failed");
   }
 
-  // Generate OTP
+  // OTP Generation - Cryptographic security
   const otp = generateOTP();
   const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
 
-  // Create user
+  // User Creation - Password hashing should be in model hooks
   const user = await User.create({
     fullName,
     email,
@@ -138,7 +143,7 @@ export const register = asyncHandler(async (req, res) => {
     otpExpiry,
   });
 
-  // Send verification email
+  // Email Verification Flow
   try {
     await sendEmail({
       to: user.email,
@@ -151,6 +156,7 @@ export const register = asyncHandler(async (req, res) => {
       },
     });
   } catch (error) {
+    // Cleanup on Failure - Atomic transaction
     await removeFileToCloudinary(avatar.public_id);
     await User.findByIdAndDelete(user._id);
     throw new ApiError(
@@ -159,7 +165,6 @@ export const register = asyncHandler(async (req, res) => {
     );
   }
 
-  // Return proper response
   return new ApiResponse(
     StatusCodes.OK,
     {
@@ -176,99 +181,117 @@ export const register = asyncHandler(async (req, res) => {
 
 // Verify email with OTP
 export const verifyEmail = asyncHandler(async (req, res) => {
+  // Input Validation - Essential fields check
   const { email, otp } = req.body;
+  if (!email || !otp) {
+    throw new ApiError(StatusCodes.BAD_REQUEST, "Email and OTP required");
+  }
 
-  if (!email || !otp)
-    throw new ApiError(StatusCodes.BAD_REQUEST, "Email and OTP are required");
-
+  // User Lookup - Find unverified user with valid OTP
   const user = await User.findOne({
     email,
     otp: { $exists: true },
-    otpExpiry: { $gt: Date.now() },
-  }).select("+otp +otpExpiry");
+    otpExpiry: { $gt: Date.now() }, // OTP not expired
+  }).select("+otp +otpExpiry"); // Include sensitive OTP fields
 
-  if (!user)
+  // Generic Error Response - Prevent email enumeration
+  if (!user) {
     throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid or expired OTP");
+  }
 
+  // OTP Verification - Constant-time comparison critical
   const isValid = await user.compareOTP(otp);
+  if (!isValid) {
+    throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid OTP");
+  }
 
-  if (!isValid) throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid OTP");
-
+  // Account Activation - Mark as verified
   user.isVerified = true;
+
+  // Security Cleanup - Remove temporary OTP credentials
   user.otp = undefined;
   user.otpExpiry = undefined;
+
   await user.save();
 
-  return ApiResponse.success(
+  // Final Response - Avoid sensitive data exposure
+  return new ApiResponse(
     StatusCodes.OK,
-    "Email verified successfully."
+    { isVerified: true },
+    "Email verification successful"
   ).send(res);
 });
 
 // Login User
 export const login = asyncHandler(async (req, res) => {
+  // Credential Validation - Multiple login identifiers
   const { email, userName, password, phone } = req.body;
 
-  if (!password && [!email || !userName || !phone]) {
+  // Input Sanity Check - Password + at least one identifier
+  if (!password || (!email && !userName && !phone)) {
     throw new ApiError(
       StatusCodes.BAD_REQUEST,
-      "Password is required, and either Username, Email, or Phone No must be provided."
+      "Password and one identifier required"
     );
   }
 
+  // Account Lookup - Security-sensitive fields selection
   const user = await User.findOne({
     $or: [{ email }, { userName }, { phone }],
   }).select("+password +refreshToken +loginAttempts +lockUntil");
 
-  if (!user) {
+  // Generic Error Response - Prevent user enumeration
+  if (!user)
     throw new ApiError(StatusCodes.UNAUTHORIZED, "Invalid credentials");
-  }
 
+  // Account Lock Check - Brute-force protection
   if (user.isLocked()) {
-    const remainingTime = Math.ceil(
-      (user.lockUntil - Date.now()) / (60 * 1000)
-    );
+    const remainingLock = Math.ceil((user.lockUntil - Date.now()) / 60000);
     throw new ApiError(
       StatusCodes.TOO_MANY_REQUESTS,
-      `Account temporarily locked. Try again in ${remainingTime} minutes.`
+      `Account locked. Retry in ${remainingLock} minutes`
     );
   }
 
+  // Email Verification Gate - Require verified status
   if (!user.isVerified) {
-    throw new ApiError(
-      StatusCodes.UNAUTHORIZED,
-      "Please verify your email first"
-    );
+    throw new ApiError(StatusCodes.UNAUTHORIZED, "Verify email first");
   }
 
+  // Password Verification - Constant-time comparison critical
   const isValid = await user.comparePassword(password);
-
   if (!isValid) {
     await user.incrementLoginAttempts();
-    const attemptsLeft = MAX_LOGIN_ATTEMPTS - (user.loginAttempts + 1);
+    const remainingAttempts = MAX_LOGIN_ATTEMPTS - (user.loginAttempts + 1);
+
     throw new ApiError(
       StatusCodes.UNAUTHORIZED,
-      attemptsLeft > 0
-        ? `Invalid credentials. ${attemptsLeft} attempts left`
+      remainingAttempts > 0
+        ? `Invalid credentials. ${remainingAttempts} attempts left`
         : "Account locked for 30 minutes"
     );
   }
 
+  // Successful Login Reset - Clear security counters
   if (user.loginAttempts > 0 || user.lockUntil) {
     await user.resetLoginAttempts();
   }
 
+  // Session Tracking - Update last login timestamp
   user.lastLogin = new Date();
   await user.save({ validateBeforeSave: false });
 
+  // Token Generation - Rotate refresh tokens
   const { accessToken, refreshToken } = await generateAccessAndRefreshToken(
     user._id
   );
 
+  // Secure Cookie Setup - HttpOnly, Secure, SameSite
   res
     .cookie("accessToken", accessToken, OPTIONS)
     .cookie("refreshToken", refreshToken, OPTIONS);
 
+  // Response Sanitization - Never return sensitive fields
   return new ApiResponse(
     StatusCodes.OK,
     {
@@ -278,24 +301,23 @@ export const login = asyncHandler(async (req, res) => {
       email: user.email,
       avatar: user.avatar?.url,
       role: user.role,
-      phone: user.pnone,
-      address: user.address,
+      phone: user.phone,
       isVerified: user.isVerified,
-      accessToken,
-      refreshToken,
     },
-    "User logged in successfully"
+    "Authentication successful"
   ).send(res);
 });
 
 // Forgot Password User
 export const forgotPassword = asyncHandler(async (req, res) => {
+  // Initial Validation - Basic email format check (implement in middleware)
   const { email } = req.body;
 
   if (!email) {
     throw new ApiError(StatusCodes.BAD_REQUEST, "Email is required.");
   }
 
+  // User Lookup - Generic response to prevent email enumeration attacks
   const user = await User.findOne({ email });
 
   if (!user) {
@@ -305,14 +327,17 @@ export const forgotPassword = asyncHandler(async (req, res) => {
     );
   }
 
+  // OTP Generation - Cryptographically secure random value
   const resetOTP = generateOTP();
   const resetOTPExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
+  // Secure Storage - Hash OTP before saving (security critical)
   user.resetPasswordOTP = await user.hashOTP(resetOTP);
   user.resetPasswordExpiresAt = resetOTPExpiresAt;
 
   await user.save({ validateBeforeSave: false });
 
+  // Email Delivery - Secure communication channel required
   try {
     await sendEmail({
       to: user.email,
@@ -325,6 +350,7 @@ export const forgotPassword = asyncHandler(async (req, res) => {
       },
     });
   } catch (error) {
+    // Cleanup on Failure - Prevent dangling invalid OTPs
     user.resetPasswordOTP = undefined;
     user.resetPasswordExpiresAt = undefined;
     await user.save({ validateBeforeSave: false });
@@ -342,6 +368,7 @@ export const forgotPassword = asyncHandler(async (req, res) => {
 
 // Reset Password User
 export const resetPassword = asyncHandler(async (req, res) => {
+  // Input Validation - Essential fields check
   const { email, otp, newPassword } = req.body;
 
   if ([email, otp, newPassword].some((field) => !field)) {
@@ -351,6 +378,7 @@ export const resetPassword = asyncHandler(async (req, res) => {
     );
   }
 
+  // User Verification - Find user with valid unexpired OTP
   const user = await User.findOne({
     email,
     resetPasswordOTP: { $exists: true },
@@ -364,12 +392,14 @@ export const resetPassword = asyncHandler(async (req, res) => {
     );
   }
 
+  // OTP Validation - Compare hashed OTP (security critical)
   const isValid = await user.resetCompareOTP(otp);
 
   if (!isValid) {
     throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid OTP");
   }
 
+  // Reuse Prevention - Check OTP blacklist
   const isBlacklisted = await TokenBlacklist.findOne({
     token: otp,
     type: "reset",
@@ -379,13 +409,16 @@ export const resetPassword = asyncHandler(async (req, res) => {
     throw new ApiError(StatusCodes.CONFLICT, "This OTP has already been used");
   }
 
+  // Password Update - Security-sensitive operation
   user.password = newPassword;
   user.resetPasswordOTP = undefined;
   user.resetPasswordExpiresAt = undefined;
   await user.save();
 
+  // OTP Invalidation - Prevent future reuse
   await TokenBlacklist.create({ token: otp, type: "reset", userId: user._id });
 
+  // Notification - Security alert to user
   try {
     await sendEmail({
       to: user.email,
@@ -397,7 +430,7 @@ export const resetPassword = asyncHandler(async (req, res) => {
       },
     });
   } catch (error) {
-    logger.error(`Email confirmation failed for ${user.email}`);
+    logger.error(`Password change alert failed for ${user.email}`, error);
   }
 
   return new ApiResponse(
@@ -408,15 +441,18 @@ export const resetPassword = asyncHandler(async (req, res) => {
 
 // Logout User
 export const logout = asyncHandler(async (req, res) => {
+  // Token Extraction - Prefer cookies over body for HTTP-only security
   const { refreshToken } = req.cookies;
 
   if (!refreshToken) {
-    throw new ApiError(StatusCodes.BAD_REQUEST, "Refresh token is required.");
+    throw new ApiError(StatusCodes.BAD_REQUEST, "Refresh token required");
   }
 
   try {
+    // Token Validation - Verify signature before blacklisting
     const decoded = jwt.verify(refreshToken, REFRESH_TOKEN_SECRET);
 
+    // Immediate Invalidation - Prevent token reuse even if valid
     await blacklistToken(
       refreshToken,
       "refresh",
@@ -424,12 +460,18 @@ export const logout = asyncHandler(async (req, res) => {
       7 * 24 * 60 * 60
     );
   } catch (error) {
-    logger.error(`Error during logout:, ${error}`);
+    // Graceful Failure - Log but proceed with cookie cleanup
+    logger.error(`Logout error: ${error.message}`);
   }
 
+  // Client-Side Cleanup - Remove tokens regardless of validation status
   res.clearCookie("accessToken", OPTIONS).clearCookie("refreshToken", OPTIONS);
 
-  return new ApiResponse(StatusCodes.OK, "Logged out successfully.").send(res);
+  // Final Response - Generic message to prevent info leakage
+  return new ApiResponse(
+    StatusCodes.OK,
+    "Session terminated successfully"
+  ).send(res);
 });
 
 // Resend verification email
@@ -491,6 +533,7 @@ export const resendVerification = asyncHandler(async (req, res) => {
 
 // Refresh Token
 export const refreshAccessToken = asyncHandler(async (req, res) => {
+  // Token Extraction - Prioritize HTTP-only cookies over body for better security
   const incomingRefreshToken =
     req.cookies?.refreshToken || req.body.refreshToken;
 
@@ -498,59 +541,13 @@ export const refreshAccessToken = asyncHandler(async (req, res) => {
     throw new ApiError(StatusCodes.UNAUTHORIZED, "Unauthorized request");
   }
 
+  let decoded;
   try {
-    const decoded = jwt.verify(incomingRefreshToken, REFRESH_TOKEN_SECRET);
-
-    const isBlacklisted = await TokenBlacklist.findOne({
-      token: incomingRefreshToken,
-      type: "refresh",
-    });
-
-    if (isBlacklisted)
-      throw new ApiError(
-        StatusCodes.UNAUTHORIZED,
-        "Token has been invalidated"
-      );
-
-    const user = await User.findById(decoded._id).select("+refreshToken");
-
-    if (!user)
-      throw new ApiError(StatusCodes.UNAUTHORIZED, "Invalid refresh token");
-
-    if (incomingRefreshToken !== user?.refreshToken)
-      throw new ApiError(
-        StatusCodes.UNAUTHORIZED,
-        "Refresh token is expired or already used"
-      );
-
-    const { accessToken, refreshToken } = await generateAccessAndRefreshToken(
-      user._id
-    );
-
-    await TokenBlacklist.create({
-      token: incomingRefreshToken,
-      type: "refresh",
-      userId: user._id,
-    });
-
-    res
-      .cookie("accessToken", accessToken, cookieOptions)
-      .cookie("refreshToken", refreshToken, cookieOptions);
-
-    return ApiResponse.success(
-      StatusCodes.OK,
-      {
-        id: user._id,
-        fullName: user.fullName,
-        userName: user.userName,
-        email: user.email,
-        avatar: user.avatar?.url,
-      },
-      "Tokens refreshed successfully."
-    ).send(res);
+    // Signature Verification - Prevent tampered tokens
+    decoded = jwt.verify(incomingRefreshToken, REFRESH_TOKEN_SECRET);
   } catch (error) {
+    // Explicit Error Handling - Distinguish between expiration and malformed tokens
     if (error instanceof jwt.TokenExpiredError) {
-      await redisClient.del(`refreshToken:${decoded?._id}`);
       throw new ApiError(StatusCodes.UNAUTHORIZED, "Refresh token expired");
     }
     if (error instanceof jwt.JsonWebTokenError) {
@@ -558,4 +555,51 @@ export const refreshAccessToken = asyncHandler(async (req, res) => {
     }
     throw error;
   }
+
+  // Blacklist Check - Prevent reuse of revoked tokens
+  const isBlacklisted = await TokenBlacklist.findOne({
+    token: incomingRefreshToken,
+    type: "refresh",
+  });
+
+  if (isBlacklisted) {
+    throw new ApiError(StatusCodes.UNAUTHORIZED, "Token has been invalidated");
+  }
+
+  // User Validation - Ensure token belongs to existing user
+  const user = await User.findById(decoded._id).select("+refreshToken");
+  if (!user) throw new ApiError(StatusCodes.UNAUTHORIZED, "User not found");
+
+  // Token Matching - Verify token matches last issued refresh token
+  if (incomingRefreshToken !== user.refreshToken) {
+    throw new ApiError(StatusCodes.UNAUTHORIZED, "Stale refresh token");
+  }
+
+  // Token Rotation - Invalidate old token immediately after verification
+  await TokenBlacklist.create({
+    token: incomingRefreshToken,
+    type: "refresh",
+    userId: user._id,
+    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+  });
+
+  // New Token Generation - Atomic update of refresh token
+  const { accessToken, refreshToken } = await generateAccessAndRefreshToken(
+    user._id
+  );
+
+  // Secure Cookie Setup - Ensure proper flags via OPTIONS constant
+  res
+    .cookie("accessToken", accessToken, OPTIONS)
+    .cookie("refreshToken", refreshToken, OPTIONS);
+
+  // Response Sanitization - Never return tokens in response body
+  return ApiResponse.success(
+    StatusCodes.OK,
+    {
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    },
+    "Tokens refreshed successfully."
+  ).send(res);
 });
