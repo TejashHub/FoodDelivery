@@ -182,49 +182,6 @@ export const authenticationController = {
     ).send(res);
   }),
 
-  // Verify email with OTP
-  verifyEmail: asyncHandler(async (req, res) => {
-    // Input Validation - Essential fields check
-    const { email, otp } = req.body;
-    if (!email || !otp) {
-      throw new ApiError(StatusCodes.BAD_REQUEST, "Email and OTP required");
-    }
-
-    // User Lookup - Find unverified user with valid OTP
-    const user = await User.findOne({
-      email,
-      otp: { $exists: true },
-      otpExpiry: { $gt: Date.now() }, // OTP not expired
-    }).select("+otp +otpExpiry"); // Include sensitive OTP fields
-
-    // Generic Error Response - Prevent email enumeration
-    if (!user) {
-      throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid or expired OTP");
-    }
-
-    // OTP Verification - Constant-time comparison critical
-    const isValid = await user.compareOTP(otp);
-    if (!isValid) {
-      throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid OTP");
-    }
-
-    // Account Activation - Mark as verified
-    user.isVerified = true;
-
-    // Security Cleanup - Remove temporary OTP credentials
-    user.otp = undefined;
-    user.otpExpiry = undefined;
-
-    await user.save();
-
-    // Final Response - Avoid sensitive data exposure
-    return new ApiResponse(
-      StatusCodes.OK,
-      { isVerified: true },
-      "Email verification successful"
-    ).send(res);
-  }),
-
   // Login User
   login: asyncHandler(async (req, res) => {
     // Credential Validation - Multiple login identifiers
@@ -308,6 +265,109 @@ export const authenticationController = {
         isVerified: user.isVerified,
       },
       "Authentication successful"
+    ).send(res);
+  }),
+
+  // Verify email with OTP
+  verifyEmail: asyncHandler(async (req, res) => {
+    // Input Validation - Essential fields check
+    const { email, otp } = req.body;
+
+    if (!email || !otp) {
+      throw new ApiError(StatusCodes.BAD_REQUEST, "Email and OTP required");
+    }
+
+    // User Lookup - Find unverified user with valid OTP
+    const user = await User.findOne({
+      email,
+      otp: { $exists: true },
+      otpExpiry: { $gt: Date.now() },
+    }).select("+otp +otpExpiry");
+
+    // Generic Error Response - Prevent email enumeration
+    if (!user) {
+      throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid or expired OTP");
+    }
+
+    // OTP Verification - Constant-time comparison critical
+    const isValid = await user.compareOTP(otp);
+
+    if (!isValid) {
+      throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid OTP");
+    }
+
+    // Account Activation - Mark as verified
+    user.isVerified = true;
+
+    // Security Cleanup - Remove temporary OTP credentials
+    user.otp = undefined;
+    user.otpExpiry = undefined;
+
+    await user.save();
+
+    // Final Response - Avoid sensitive data exposure
+    return new ApiResponse(
+      StatusCodes.OK,
+      { isVerified: true },
+      "Email verification successful"
+    ).send(res);
+  }),
+
+  // Resend OTP Via Email
+  resendOTP: asyncHandler(async (req, res) => {
+    const { email } = req.body;
+
+    if (!email) {
+      throw new ApiError(StatusCodes.BAD_REQUEST, "Email is required");
+    }
+
+    const user = await User.findOne({ email }).select("+otp +otpExpiry");
+
+    if (!user) {
+      return new ApiResponse(
+        StatusCodes.OK,
+        "If an account exists with this email, a verification OTP has been sent."
+      );
+    }
+
+    if (user.isVerified) {
+      throw new ApiError(StatusCodes.BAD_REQUEST, "Email is already verified");
+    }
+
+    const otp = generateOTP();
+
+    const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
+
+    user.otp = otp;
+    user.otpExpiry = otpExpiry;
+
+    await user.save({ validateBeforeSave: false });
+
+    try {
+      await sendEmail({
+        to: user.email,
+        subject: "Verify Your Email",
+        template: "emailVerification",
+        context: {
+          name: user.fullName,
+          otp,
+          expiresIn: "10 minutes",
+        },
+      });
+    } catch (error) {
+      user.otp = undefined;
+      user.otpExpiry = undefined;
+      await user.save({ validateBeforeSave: false });
+
+      throw new ApiError(
+        StatusCodes.INTERNAL_SERVER_ERROR,
+        "Failed to send verification email"
+      );
+    }
+
+    return new ApiResponse(
+      StatusCodes.OK,
+      "If an account exists with this email, a verification OTP has been sent."
     ).send(res);
   }),
 
@@ -483,63 +543,6 @@ export const authenticationController = {
     return new ApiResponse(
       StatusCodes.OK,
       "Session terminated successfully"
-    ).send(res);
-  }),
-
-  // Resend verification email
-  resendVerification: asyncHandler(async (req, res) => {
-    const { email } = req.body;
-
-    if (!email) {
-      throw new ApiError(StatusCodes.BAD_REQUEST, "Email is required");
-    }
-
-    const user = await User.findOne({ email }).select("+otp +otpExpiry");
-
-    if (!user) {
-      return new ApiResponse(
-        StatusCodes.OK,
-        "If an account exists with this email, a verification OTP has been sent."
-      );
-    }
-
-    if (user.isVerified) {
-      throw new ApiError(StatusCodes.BAD_REQUEST, "Email is already verified");
-    }
-
-    const otp = generateOTP();
-    const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
-
-    user.otp = await user.hashOTP(otp);
-    user.otpExpiry = otpExpiry;
-
-    await user.save({ validateBeforeSave: false });
-
-    try {
-      await sendEmail({
-        to: user.email,
-        subject: "Verify Your Email",
-        template: "emailVerification",
-        context: {
-          name: user.fullName,
-          otp,
-          expiresIn: "10 minutes",
-        },
-      });
-    } catch (error) {
-      user.otp = undefined;
-      user.otpExpiry = undefined;
-      await user.save({ validateBeforeSave: false });
-
-      throw new ApiError(
-        StatusCodes.INTERNAL_SERVER_ERROR,
-        "Failed to send verification email"
-      );
-    }
-
-    return new ApiResponse(
-      StatusCodes.OK,
-      "If an account exists with this email, a verification OTP has been sent."
     ).send(res);
   }),
 

@@ -90,9 +90,8 @@ const userSchema = new mongoose.Schema(
   }
 );
 
-// Pre-save Hook
 userSchema.pre("save", async function (next) {
-  if (this.isModified("password")) {
+  if (this.isModified("password") && this.password) {
     try {
       const salt = await bcrypt.genSalt(10);
       this.password = await bcrypt.hash(this.password, salt);
@@ -100,7 +99,7 @@ userSchema.pre("save", async function (next) {
       return next(error);
     }
   }
-  if (this.isModified("otp")) {
+  if (this.isModified("otp") && this.otp) {
     try {
       const salt = await bcrypt.genSalt(10);
       this.otp = await bcrypt.hash(this.otp, salt);
@@ -109,17 +108,6 @@ userSchema.pre("save", async function (next) {
     }
   }
   next();
-});
-
-// Virtual Property for Full Address
-userSchema.virtual("addresses.fullAddress").get(function () {
-  if (!this.addresses || this.addresses.length === 0) return null;
-  return this.addresses
-    .map(
-      (address) =>
-        `${address.street}, ${address.city}, ${address.state} ${address.postalCode}, ${address.country}`
-    )
-    .join(" | ");
 });
 
 // User Methods
@@ -133,31 +121,29 @@ userSchema.methods = {
   },
 
   hashOTP: async function (otp) {
+    if (!otp) return null;
     return await bcrypt.hash(otp, 10);
   },
 
   compareOTP: async function (candidateOTP) {
-    if (!this.otp) {
-      throw new Error("OTP not found in user document");
-    }
-
+    if (!this.otp) return null;
     if (!this.otpExpiry || this.otpExpiry < Date.now()) {
-      console.log("OTP expired.");
       return false;
     }
-
     const isMatch = await bcrypt.compare(candidateOTP, this.otp);
     return isMatch;
   },
 
   resetCompareOTP: async function (candidateOTP) {
-    if (!this.resetPasswordOTP) null;
+    if (!this.resetPasswordOTP) return null;
     if (
       !this.resetPasswordExpiresAt ||
       this.resetPasswordExpiresAt < Date.now()
-    )
+    ) {
       return false;
-    return await bcrypt.compare(candidateOTP, this.resetPasswordOTP);
+    }
+    const isMatch = await bcrypt.compare(candidateOTP, this.resetPasswordOTP);
+    return isMatch;
   },
 
   generateAccessToken: function () {

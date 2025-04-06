@@ -43,7 +43,7 @@ router
     authLimiter,
     upload.single("avatar"),
     validation(registerSchema),
-    register
+    authenticationController.register
   );
 
 router
@@ -66,8 +66,8 @@ router
   );
 
 router
-  .route("/resend-verification")
-  .post(validation(emailSchema), authenticationController.resendVerification);
+  .route("/resend-otp")
+  .post(validation(emailSchema), authenticationController.resendOTP);
 
 // --------------------------
 // Protected Routes (Require authentication)

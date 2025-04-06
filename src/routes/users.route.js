@@ -32,7 +32,7 @@ router.use(authMiddleware);
 
 router
   .route("/profile")
-  .get(getProfile)
+  .get(userController.getProfile)
   .patch(validation(updateProfileScheme), userController.updateProfile);
 
 router
