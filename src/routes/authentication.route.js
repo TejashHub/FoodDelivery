@@ -29,12 +29,11 @@ import {
 
 // Request validation schemas
 import {
+  emailSchema,
   loginSchema,
   registerSchema,
   verifyEmailSchema,
-  forgotPasswordSchema,
   resetPasswordSchema,
-  resetEmailVerificationSchema,
 } from "../validations/user.validation.js";
 
 const router = express.Router();
@@ -62,7 +61,7 @@ router.route("/verify-email").post(validation(verifyEmailSchema), verifyEmail);
 // Password recovery system
 router
   .route("/forgot-password")
-  .post(passwordResetLimiter, validation(forgotPasswordSchema), forgotPassword);
+  .post(passwordResetLimiter, validation(emailSchema), forgotPassword);
 router
   .route("/reset-password")
   .post(passwordResetLimiter, validation(resetPasswordSchema), resetPassword);
@@ -70,7 +69,7 @@ router
 // Verification retry
 router
   .route("/resend-verification")
-  .post(validation(resetEmailVerificationSchema), resendVerification);
+  .post(validation(emailSchema), resendVerification);
 
 // --------------------------
 // Protected Routes

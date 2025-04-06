@@ -6,6 +6,38 @@ const passwordPattern =
   /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
 const phonePattern = /^[+]?[(]?\d{3}[)]?[-\s.]?\d{3}[-\s.]?\d{4,6}$/;
 
+// Common validation
+export const emailSchema = Joi.object({
+  email: Joi.string().email().lowercase().trim().required(),
+});
+
+export const phoneSchema = Joi.object({
+  phone: Joi.string().pattern(phonePattern).trim().messages({
+    "string.pattern.base": "Invalid phone number format",
+  }),
+});
+
+export const otpSchema = Joi.object({
+  otp: Joi.string().length(6).required(),
+});
+
+export const avatarSchema = Joi.object({
+  avatar: Joi.object({
+    mimetype: Joi.string().valid("image/jpeg", "image/png"),
+  }),
+});
+
+export const passwordSchema = Joi.object({
+  password: Joi.string().pattern(passwordPattern).required().messages({
+    "string.pattern.base":
+      "Password must contain at least 8 characters, one uppercase, one lowercase, one number, and one special character",
+  }),
+});
+
+export const roleSchema = Joi.object({
+  role: Joi.string().valid("user", "admin", "moderator").required(),
+});
+
 // Authentication validation
 export const registerSchema = Joi.object({
   fullName: Joi.string()
@@ -61,10 +93,6 @@ export const loginSchema = Joi.object({
   }),
 });
 
-export const forgotPasswordSchema = Joi.object({
-  email: Joi.string().email().lowercase().trim().required(),
-});
-
 export const verifyEmailSchema = Joi.object({
   email: Joi.string().email().lowercase().trim().required(),
   otp: Joi.string().length(6).required(),
@@ -79,10 +107,6 @@ export const resetPasswordSchema = Joi.object({
   }),
 });
 
-export const resetEmailVerificationSchema = Joi.object({
-  email: Joi.string().email().trim().lowercase().required(),
-});
-
 // User validation
 export const updateProfileScheme = Joi.object({
   fullName: Joi.string()
@@ -93,12 +117,6 @@ export const updateProfileScheme = Joi.object({
     .required(),
   email: Joi.string().email().trim().lowercase().required(),
   userName: Joi.string().pattern(userNamePattern).trim().lowercase(),
-});
-
-export const updateAvatarSchema = Joi.object({
-  avatar: Joi.object({
-    mimetype: Joi.string().valid("image/jpeg", "image/png"),
-  }),
 });
 
 export const changePasswordSchema = Joi.object({
@@ -112,47 +130,4 @@ export const changePasswordSchema = Joi.object({
   }),
 });
 
-export const deleteAccountSchema = Joi.object({
-  email: Joi.string().email().trim().lowercase().required(),
-});
-
 // Admin validation
-export const getAllUsersSchema = Joi.object({
-  page: Joi.number().integer().min(1).default(1),
-  limit: Joi.number().integer().min(1).max(100).default(10),
-  search: Joi.string().allow("").default(""),
-  role: Joi.string().valid("user", "admin", "moderator", "").default(""),
-});
-
-export const updateUserRoleSchema = Joi.object({
-  role: Joi.string().valid("user", "admin", "moderator").required(),
-});
-
-export const toggleUserStatusSchema = Joi.object({
-  isActive: Joi.boolean().optional(),
-});
-
-export const impersonateUserSchema = Joi.object({
-  userId: Joi.string().hex().length(24).required(),
-});
-
-export const userProfileSchema = Joi.object({
-  fullName: Joi.string().pattern(fullNamePattern).min(2).max(50),
-  email: Joi.string().email(),
-  userName: Joi.string().pattern(userNamePattern).min(3).max(30),
-  phone: Joi.string().pattern(phonePattern),
-  addresses: Joi.array()
-    .items(
-      Joi.object({
-        street: Joi.string().required(),
-        city: Joi.string().required(),
-        state: Joi.string().required(),
-        postalCode: Joi.string().required(),
-        country: Joi.string().required(),
-        latitude: Joi.number().min(-90).max(90).optional(),
-        longitude: Joi.number().min(-180).max(180).optional(),
-        isDefault: Joi.boolean().default(false),
-      })
-    )
-    .optional(),
-});
