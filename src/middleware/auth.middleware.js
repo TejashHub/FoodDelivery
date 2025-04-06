@@ -47,14 +47,3 @@ export const authMiddleware = asyncHandler(async (req, _, next) => {
     throw error;
   }
 });
-
-export const authRoles = (...roles) => {
-  return (req, res, next) => {
-    if (!roles.includes(req.user.role)) {
-      return res.status(403).json({
-        message: `Forbidden - ${req.user.role} role is not authorized to access this resource`,
-      });
-    }
-    next();
-  };
-};

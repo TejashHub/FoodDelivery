@@ -38,8 +38,29 @@ export const roleSchema = Joi.object({
   role: Joi.string().valid("user", "admin", "moderator").required(),
 });
 
-// Authentication validation
-export const registerSchema = Joi.object({
+export const statusSchema = Joi.object({
+  isActivee: Joi.bool().valid(true, false),
+});
+
+export const querySchema = Joi.object({
+  search: Joi.string().optional().allow(""),
+  page: Joi.number().integer().min(1).default(1),
+  limit: Joi.number().integer().min(1).default(10),
+  fields: Joi.string()
+    .optional()
+    .default("fullName, userName, email, phone, role, isVerified addresses"),
+});
+
+export const dateRangeSchema = Joi.object({
+  startDate: Joi.date().iso().required().label("Start Date"),
+  endDate: Joi.date()
+    .iso()
+    .min(Joi.ref("startDate"))
+    .required()
+    .label("End Date"),
+});
+
+export const createUser = Joi.object({
   fullName: Joi.string()
     .pattern(fullNamePattern)
     .trim()
@@ -81,6 +102,19 @@ export const registerSchema = Joi.object({
     .default([]),
 });
 
+export const updateUser = Joi.object({
+  fullName: Joi.string()
+    .pattern(fullNamePattern)
+    .trim()
+    .min(2)
+    .max(50)
+    .required(),
+  email: Joi.string().email().trim().lowercase().required(),
+  userName: Joi.string().pattern(userNamePattern).trim().lowercase(),
+});
+
+// Authentication validation
+
 export const loginSchema = Joi.object({
   email: Joi.string().email().trim().lowercase(),
   userName: Joi.string().pattern(userNamePattern).trim().lowercase(),
@@ -108,17 +142,6 @@ export const resetPasswordSchema = Joi.object({
 });
 
 // User validation
-export const updateProfileScheme = Joi.object({
-  fullName: Joi.string()
-    .pattern(fullNamePattern)
-    .trim()
-    .min(2)
-    .max(50)
-    .required(),
-  email: Joi.string().email().trim().lowercase().required(),
-  userName: Joi.string().pattern(userNamePattern).trim().lowercase(),
-});
-
 export const changePasswordSchema = Joi.object({
   oldPassword: Joi.string().pattern(passwordPattern).required().messages({
     "string.pattern.base":
@@ -129,5 +152,3 @@ export const changePasswordSchema = Joi.object({
       "Password must contain at least 8 characters, one uppercase, one lowercase, one number, and one special character",
   }),
 });
-
-// Admin validation

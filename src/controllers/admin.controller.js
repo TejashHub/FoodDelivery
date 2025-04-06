@@ -16,7 +16,15 @@ import User from "../models/user.model.js";
 // Middleware
 import asyncHandler from "../middleware/asyncHandler.middleware.js";
 
+// Clodinary
+import {
+  uploadFileToCloudinary,
+  removeFileToCloudinary,
+} from "../config/cloudinary.config.js";
+
 // Utils
+import sendEmail from "../utils/email.js";
+import generateOTP from "../utils/otp.js";
 import ApiResponse from "../utils/apiResponse.js";
 import ApiError from "../utils/apiError.js";
 
@@ -105,6 +113,7 @@ export const adminController = {
 
   // Create a new user by admin
   createUser: asyncHandler(async (req, res) => {
+    // Input Validation - Essential fields check
     const {
       fullName,
       email,
@@ -114,7 +123,7 @@ export const adminController = {
       addresses = [],
     } = req.body;
 
-    // Validate that required fields are provided
+    // Required Fields Verification
     if (
       [fullName, email, userName, password, phone].some(
         (field) => !field?.trim()
@@ -126,7 +135,7 @@ export const adminController = {
       );
     }
 
-    // Check if the username, email, or phone already exists in the database
+    // Existing User Check - Prevent duplicate accounts
     const existedUser = await User.findOne({
       $or: [{ userName }, { email }, { phone }],
     });
@@ -138,32 +147,35 @@ export const adminController = {
       );
     }
 
-    // Handle the file upload for avatar (profile picture)
+    // Avatar Handling - Mandatory profile image
     const avatarLocalPath = req.file?.path;
 
     if (!avatarLocalPath) {
       throw new ApiError(StatusCodes.BAD_REQUEST, "Avatar file is required");
     }
 
-    // Securely upload the avatar to Cloudinary or similar storage
+    // Secure Cloud Upload
     const avatar = await uploadFileToCloudinary(avatarLocalPath);
 
     if (!avatar) {
       throw new ApiError(StatusCodes.BAD_REQUEST, "Avatar file upload failed");
     }
 
-    // Generate an OTP for email verification with an expiry time
+    // OTP Generation - Cryptographic security
     const otp = generateOTP();
     const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
 
-    // Create a new user in the database, including the uploaded avatar and OTP
+    // User Creation - Password hashing should be in model hooks
     const user = await User.create({
       fullName,
       email,
       userName,
       password,
       phone,
-      avatar: { public_id: avatar.public_id, url: avatar.secure_url },
+      avatar: {
+        public_id: avatar.public_id,
+        url: avatar.secure_url,
+      },
       addresses: addresses.map((addr) => ({
         street: addr.street,
         city: addr.city,
@@ -178,7 +190,7 @@ export const adminController = {
       otpExpiry,
     });
 
-    // Try sending a verification email with the OTP to the user
+    // Email Verification Flow
     try {
       await sendEmail({
         to: user.email,
@@ -191,7 +203,7 @@ export const adminController = {
         },
       });
     } catch (error) {
-      // If email fails, clean up resources (delete user and avatar)
+      // Cleanup on Failure - Atomic transaction
       await removeFileToCloudinary(avatar.public_id);
       await User.findByIdAndDelete(user._id);
       throw new ApiError(
@@ -200,7 +212,6 @@ export const adminController = {
       );
     }
 
-    // Respond with the created user info (excluding sensitive data like password)
     return new ApiResponse(
       StatusCodes.OK,
       {
@@ -211,7 +222,112 @@ export const adminController = {
         phone: user.phone,
         addresses: user.addresses,
       },
-      "User created successfully by admin. Please check your email to verify your account."
+      "User created by admin. Please check your email to verify your account."
+    ).send(res);
+  }),
+
+  // Update User Profile
+  updateUser: asyncHandler(async (req, res) => {
+    // Destructure user input from the request body
+    const { fullName, userName, email, phone, addresses = [] } = req.body;
+
+    // Validate address fields - ensure each address has required fields
+    addresses.forEach((addr) => {
+      if (!addr.street || !addr.city || !addr.postalCode) {
+        throw new ApiError(
+          StatusCodes.BAD_REQUEST,
+          "Each address must have street, city, and postalCode"
+        );
+      }
+    });
+
+    // Fetch the current user's profile
+    const user = await User.findById(req.user._id).select(
+      "-password -refreshToken"
+    );
+    if (!user) throw new ApiError(StatusCodes.NOT_FOUND, "User not found");
+
+    // Prevent duplicate email or username
+    const emailExists = await User.findOne({ email });
+    if (emailExists && emailExists._id.toString() !== user._id.toString()) {
+      throw new ApiError(StatusCodes.CONFLICT, "Email already in use");
+    }
+
+    const usernameExists = await User.findOne({ userName });
+    if (
+      usernameExists &&
+      usernameExists._id.toString() !== user._id.toString()
+    ) {
+      throw new ApiError(StatusCodes.CONFLICT, "Username already taken");
+    }
+
+    // Prepare the data to be updated
+    const updatedData = { fullName, userName, email, phone };
+
+    // Add new addresses, but limit to 5 most recent ones
+    if (addresses.length > 0) {
+      updatedData.addresses = [...user.addresses, ...addresses].slice(-5);
+    }
+
+    // Update user profile in the database with new data
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user._id,
+      updatedData,
+      {
+        new: true,
+        runValidators: true,
+      }
+    ).select("-password -refreshToken");
+
+    // Return the updated user data in response
+    return new ApiResponse(
+      StatusCodes.OK,
+      {
+        data: {
+          _id: updatedUser._id,
+          fullName: updatedUser.fullName,
+          userName: updatedUser.userName,
+          email: updatedUser.email,
+          phone: updatedUser.phone,
+          addresses: updatedUser.addresses,
+          avatar: updatedUser.avatar?.url,
+        },
+      },
+      "Profile updated successfully"
+    ).send(res);
+  }),
+
+  // Upload / Change User Avatar
+  updateAvatar: asyncHandler(async (req, res) => {
+    // Fetch the current user's profile from the database
+    const user = await User.findById(req.user._id);
+    if (!user) throw new ApiError(StatusCodes.NOT_FOUND, "User not found");
+
+    // Get the file path of the uploaded avatar
+    const avatarPath = req.file?.path;
+    if (!avatarPath) {
+      throw new ApiError(StatusCodes.BAD_REQUEST, "Avatar image required");
+    }
+
+    // Upload the avatar image to Cloudinary and get its URL
+    const avatar = await uploadFileToCloudinary(avatarPath);
+    if (!avatar) {
+      throw new ApiError(StatusCodes.BAD_REQUEST, "Avatar upload failed");
+    }
+
+    // Update the user's avatar field in the database with Cloudinary info
+    user.avatar = {
+      public_id: avatar.public_id,
+      url: avatar.secure_url,
+    };
+
+    await user.save();
+
+    // Return the updated avatar information in response
+    return new ApiResponse(
+      StatusCodes.OK,
+      { avatar: user.avatar },
+      "Avatar updated"
     ).send(res);
   }),
 
@@ -275,9 +391,7 @@ export const adminController = {
       throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid id");
     }
 
-    const user = await User.findById(id).select(
-      "fullName userName email phone role isVerified addresses"
-    );
+    const user = await User.findById(id);
 
     // If user not found, return error
     if (!user) {
@@ -392,62 +506,5 @@ export const adminController = {
       },
       "User growth metrics fetched successfully"
     ).send(res);
-  }),
-
-  // Check the system's health (e.g., uptime, memory, DB status)
-  systemHealthCheck: asyncHandler(async (req, res) => {
-    const uptime = os.uptime();
-    const freeMemory = os.freemem();
-    const totalMemory = os.totalmem();
-
-    const isDatabaseConnected = true; // Ideally, should check DB connection status here
-
-    // Return system health metrics
-    return new ApiResponse(
-      StatusCodes.OK,
-      { uptime, freeMemory, totalMemory, isDatabaseConnected },
-      "System health check successful"
-    ).send(res);
-  }),
-
-  // Fetch the server logs from a specific log file
-  getServerLogs: asyncHandler(async (req, res) => {
-    const logsFilePath = path.join(__dirname, "logs", "server.log");
-
-    fs.readFile(logsFilePath, "utf8", (error, data) => {
-      if (error) {
-        throw new ApiError(
-          StatusCodes.INTERNAL_SERVER_ERROR,
-          "Error reading logs"
-        );
-      }
-
-      // Respond with the logs data
-      return new ApiResponse(
-        StatusCodes.OK,
-        { logs: data },
-        "Server logs fetched successfully"
-      ).send(res);
-    });
-  }),
-
-  // Initiate a database backup
-  initiateDatabaseBackup: asyncHandler(async (req, res) => {
-    const backupPath = "/path/to/backup/directory";
-
-    exec(`mongodump --out ${backupPath}`, (error, stdout, stderr) => {
-      if (error) {
-        throw new ApiError(
-          StatusCodes.INTERNAL_SERVER_ERROR,
-          "Database backup failed"
-        );
-      }
-
-      return new ApiResponse(
-        StatusCodes.OK,
-        { message: "Database backup successful" },
-        "Database backup initiated successfully"
-      ).send(res);
-    });
   }),
 };

@@ -21,11 +21,11 @@ import {
 // Validation Schemas
 import {
   emailSchema,
+  createUser,
   loginSchema,
-  registerSchema,
   verifyEmailSchema,
   resetPasswordSchema,
-} from "../validations/user.validation.js";
+} from "../validations/validation.js";
 
 const router = express.Router();
 
@@ -42,7 +42,7 @@ router
   .post(
     authLimiter,
     upload.single("avatar"),
-    validation(registerSchema),
+    validation(createUser),
     authenticationController.register
   );
 

@@ -18,9 +18,9 @@ import validation from "../middleware/validation.middleware.js";
 import {
   avatarSchema,
   passwordSchema,
-  updateProfileScheme,
+  updateUser,
   changePasswordSchema,
-} from "../validations/user.validation.js";
+} from "../validations/validation.js";
 
 const router = express.Router();
 
@@ -33,7 +33,7 @@ router.use(authMiddleware);
 router
   .route("/profile")
   .get(userController.getProfile)
-  .patch(validation(updateProfileScheme), userController.updateProfile);
+  .patch(validation(updateUser), userController.updateProfile);
 
 router
   .route("/avatar")

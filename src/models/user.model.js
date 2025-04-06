@@ -3,11 +3,14 @@
  * @license Apache-2.0
  */
 
+// Database
 import mongoose from "mongoose";
+
+// External Packange
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import uniqueValidator from "mongoose-unique-validator";
 
+// Constant
 import {
   ACCESS_TOKEN_SECRET,
   ACCESS_TOKEN_EXPIRES_IN,
@@ -197,11 +200,6 @@ userSchema.methods = {
     return await this.save();
   },
 };
-
-// Unique Validator Plugin
-userSchema.plugin(uniqueValidator, {
-  message: "{PATH} '{VALUE}' is already in use",
-});
 
 // Export User Model
 const User = mongoose.model("User", userSchema);

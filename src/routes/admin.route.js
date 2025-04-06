@@ -4,7 +4,22 @@ import express from "express";
 import { adminController } from "../controllers/admin.controller.js";
 
 // Middleware
-import { authMiddleware, authRoles } from "../middleware/auth.middleware.js";
+import { authMiddleware } from "../middleware/auth.middleware.js";
+import { adminMiddleware } from "../middleware/admin.middleware.js";
+import validation from "../middleware/validation.middleware.js";
+import upload from "../middleware/multer.middleware.js";
+
+// Validation
+import {
+  avatarSchema,
+  createUser,
+  updateUser,
+  querySchema,
+  roleSchema,
+  statusSchema,
+  passwordSchema,
+  dateRangeSchema,
+} from "../validations/validation.js";
 
 const router = express.Router();
 
@@ -13,28 +28,41 @@ const router = express.Router();
 // --------------------------
 
 router.use(authMiddleware);
-router.use(authRoles("admin"));
+router.use(adminMiddleware);
 
 router
   .route("/")
-  .get(adminController.getAllUsers)
-  .post(adminController.createUser);
+  .get(validation(querySchema), adminController.getAllUsers)
+  .post(
+    validation(createUser),
+    upload.single("avatar"),
+    adminController.createUser
+  );
 
 router
   .route("/:id")
   .get(adminController.getUserDetails)
-  .delete(adminController.deleteUser);
+  .patch(validation(updateUser), adminController.updateUser)
+  .delete(validation(passwordSchema), adminController.deleteUser);
 
-router.route("/:id/role").patch(adminController.changeUserRole);
+router
+  .route("/:id/avatar")
+  .patch(
+    validation(avatarSchema),
+    upload.single("avatar"),
+    adminController.updateAvatar
+  );
 
-router.route("/:id/status").patch(adminController.changeUserStatus);
+router
+  .route("/:id/role")
+  .patch(validation(roleSchema), adminController.changeUserRole);
 
-router.route("/metrics/users").patch(adminController.getUserGrowthMetrics);
+router
+  .route("/:id/status")
+  .patch(validation(statusSchema), adminController.changeUserStatus);
 
-router.route("/system/health").patch(adminController.systemHealthCheck);
-
-router.route("/system/logs").patch(adminController.getServerLogs);
-
-router.route("/system/backup").patch(adminController.initiateDatabaseBackup);
+router
+  .route("/metrics/users")
+  .patch(validation(dateRangeSchema), adminController.getUserGrowthMetrics);
 
 export default router;

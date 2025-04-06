@@ -1,12 +1,22 @@
+// Database
 import mongoose from "mongoose";
-import Restaurant from "../../models/restaurant.model.js";
-import asyncHandler from "../../middlewares/asyncHandler.middleware.js";
-import { ApiError } from "../../errors/ApiError.js";
+
+// External Package
 import { StatusCodes } from "http-status-codes";
+
+// Model
+import Restaurant from "../models/restaurant.model.js";
+
+// Middleware
+import asyncHandler from "../middleware/asyncHandler.middleware.js";
+
+// Utils
+import ApiError from "../utils/apiError.js";
+import ApiResponse from "../utils/apiResponse.js";
 import {
-  cloudinaryFileUpload,
-  cloudinaryFileRemove,
-} from "../../utils/cloudinary.js";
+  uploadFileToCloudinary,
+  removeFileToCloudinary,
+} from "../config/cloudinary.config.js";
 
 const RestaurantController = {
   // Core Restaurant Operations
