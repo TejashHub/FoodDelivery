@@ -6,19 +6,10 @@
 
 import express from "express";
 
-// Core dependencies
-import {
-  register,
-  login,
-  logout,
-  refreshAccessToken,
-  verifyEmail,
-  resendVerification,
-  forgotPassword,
-  resetPassword,
-} from "../controllers/authentication.controller.js";
+// Controller
+import { authenticationController } from "../controllers/authentication.controller.js";
 
-// Security middleware
+// Middlewares
 import { authMiddleware } from "../middleware/auth.middleware.js";
 import upload from "../middleware/multer.middleware.js";
 import validation from "../middleware/validation.middleware.js";
@@ -27,7 +18,7 @@ import {
   passwordResetLimiter,
 } from "../middleware/rateLimiter.middleware.js";
 
-// Request validation schemas
+// Validation Schemas
 import {
   emailSchema,
   loginSchema,
@@ -42,10 +33,10 @@ const router = express.Router();
 // Public Routes (No auth required)
 // --------------------------
 
-// User authentication
-router.route("/login").post(authLimiter, validation(loginSchema), login);
+router
+  .route("/login")
+  .post(authLimiter, validation(loginSchema), authenticationController.login);
 
-// User registration with avatar upload
 router
   .route("/register")
   .post(
@@ -55,29 +46,36 @@ router
     register
   );
 
-// Email verification flow
-router.route("/verify-email").post(validation(verifyEmailSchema), verifyEmail);
+router
+  .route("/verify-email")
+  .post(validation(verifyEmailSchema), authenticationController.verifyEmail);
 
-// Password recovery system
 router
   .route("/forgot-password")
-  .post(passwordResetLimiter, validation(emailSchema), forgotPassword);
+  .post(
+    passwordResetLimiter,
+    validation(emailSchema),
+    authenticationController.forgotPassword
+  );
 router
   .route("/reset-password")
-  .post(passwordResetLimiter, validation(resetPasswordSchema), resetPassword);
+  .post(
+    passwordResetLimiter,
+    validation(resetPasswordSchema),
+    authenticationController.resetPassword
+  );
 
-// Verification retry
 router
   .route("/resend-verification")
-  .post(validation(emailSchema), resendVerification);
+  .post(validation(emailSchema), authenticationController.resendVerification);
 
 // --------------------------
-// Protected Routes
+// Protected Routes (Require authentication)
 // --------------------------
 
 router.use(authMiddleware);
 
-router.route("/logout").post(logout);
-router.route("/refresh-token").get(refreshAccessToken);
+router.route("/logout").post(authenticationController.logout);
+router.route("/refresh-token").get(authenticationController.refreshAccessToken);
 
 export default router;

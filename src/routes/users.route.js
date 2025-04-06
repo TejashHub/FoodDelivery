@@ -6,16 +6,10 @@
 
 import express from "express";
 
-// Controller imports
-import {
-  getProfile,
-  updateProfile,
-  updateAvatar,
-  changePassword,
-  deleteAccount,
-} from "../controllers/users.controller.js";
+// Controller
+import { userController } from "../controllers/users.controller.js";
 
-// Security middleware
+// middlewares
 import { authMiddleware } from "../middleware/auth.middleware.js";
 import upload from "../middleware/multer.middleware.js";
 import validation from "../middleware/validation.middleware.js";
@@ -36,24 +30,25 @@ const router = express.Router();
 
 router.use(authMiddleware);
 
-// Profile management
 router
   .route("/profile")
   .get(getProfile)
-  .patch(validation(updateProfileScheme), updateProfile);
+  .patch(validation(updateProfileScheme), userController.updateProfile);
 
-// Avatar operations
 router
   .route("/avatar")
-  .patch(upload.single("avatar"), validation(avatarSchema), updateAvatar);
+  .patch(
+    upload.single("avatar"),
+    validation(avatarSchema),
+    userController.updateAvatar
+  );
 
-// Security-sensitive operations
 router
   .route("/change-password")
-  .patch(validation(changePasswordSchema), changePassword);
+  .patch(validation(changePasswordSchema), userController.changePassword);
 
 router
   .route("/delete-account")
-  .delete(validation(passwordSchema), deleteAccount);
+  .delete(validation(passwordSchema), userController.deleteAccount);
 
 export default router;

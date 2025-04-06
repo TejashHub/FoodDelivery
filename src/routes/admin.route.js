@@ -1,10 +1,16 @@
 import express from "express";
 
-import { authMiddleware, authRoles } from "../middleware/auth.middleware.js";
-
+// Controller
 import { adminController } from "../controllers/admin.controller.js";
 
+// Middleware
+import { authMiddleware, authRoles } from "../middleware/auth.middleware.js";
+
 const router = express.Router();
+
+// --------------------------
+// Protected Routes (Require authentication && Admin Require)
+// --------------------------
 
 router.use(authMiddleware);
 router.use(authRoles("admin"));
@@ -24,10 +30,6 @@ router.route("/:id/role").patch(adminController.changeUserRole);
 router.route("/:id/status").patch(adminController.changeUserStatus);
 
 router.route("/metrics/users").patch(adminController.getUserGrowthMetrics);
-
-router.route("/metrics/activity").patch(adminController.getUserActivityStats);
-
-router.route("/metrics/retention").patch(adminController.getUserRetentionRates);
 
 router.route("/system/health").patch(adminController.systemHealthCheck);
 
