@@ -1,33 +1,38 @@
 import express from "express";
-import RestaurantController from "../../controllers/restaurant/restaurant.controller..js";
-import { authMiddleware } from "../../middleware/auth.middleware.js";
-import { adminMiddleware } from "../../middleware/admin.middleware.js";
+
+// Controller
+import RestaurantController from "../controllers/restaurant.controller.js";
+
+// Middlewares
+import { authMiddleware } from "../middleware/auth.middleware.js";
+import { adminMiddleware } from "../middleware/admin.middleware.js";
+import upload from "../middleware/multer.middleware.js";
 
 const router = express.Router();
 
 // ====================== PUBLIC ROUTES (No Auth) ======================
 
-const publicRouter = express.Router();
+// const publicRouter = express.Router();
 
-// Category Endpoints
-publicRouter.get(
-  "/:id/categories",
-  RestaurantController.getAllCategoryResturant
-);
-publicRouter.get("/:id/categories/active", RestaurantController.activeCategory);
-publicRouter.get(
-  "/:id/categories/featured",
-  RestaurantController.featuredCategory
-);
-publicRouter.get(
-  "/:id/categories/popular",
-  RestaurantController.popularCategory
-);
-publicRouter.get(
-  "/:id/categories/available-now",
-  RestaurantController.availableCategory
-);
-publicRouter.get("/:id/categories/stats", RestaurantController.statsCategory);
+// // Category Endpoints
+// publicRouter.get(
+//   "/:id/categories",
+//   RestaurantController.getAllCategoryResturant
+// );
+// publicRouter.get("/:id/categories/active", RestaurantController.activeCategory);
+// publicRouter.get(
+//   "/:id/categories/featured",
+//   RestaurantController.featuredCategory
+// );
+// publicRouter.get(
+//   "/:id/categories/popular",
+//   RestaurantController.popularCategory
+// );
+// publicRouter.get(
+//   "/:id/categories/available-now",
+//   RestaurantController.availableCategory
+// );
+// publicRouter.get("/:id/categories/stats", RestaurantController.statsCategory);
 
 // ====================== PROTECTED ROUTES (Auth Required) ======================
 
@@ -39,23 +44,48 @@ protectedRouter.use(authMiddleware);
 protectedRouter
   .route("/")
   .get(RestaurantController.getAllRestaurants)
-  .post(RestaurantController.createRestaurant)
+  .post(
+    upload.fields([
+      { name: "logo", maxCount: 1 },
+      { name: "coverImage", maxCount: 1 },
+      { name: "images", maxCount: 10 },
+      { name: "menuImages", maxCount: 10 },
+    ]),
+    RestaurantController.createRestaurant
+  )
   .delete(RestaurantController.deleteManyRestaurants);
 
 protectedRouter
   .route("/:id")
   .get(RestaurantController.getRestaurant)
-  .patch(RestaurantController.updateRestaurant)
+  .patch(
+    upload.fields([
+      { name: "logo", maxCount: 1 },
+      { name: "coverImage", maxCount: 1 },
+      { name: "images", maxCount: 10 },
+      { name: "menuImages", maxCount: 10 },
+    ]),
+    RestaurantController.updateRestaurant
+  )
   .delete(RestaurantController.deleteRestaurant);
 
 // Location-Based
-protectedRouter.get("/nearby", RestaurantController.getNearbyRestaurants);
-protectedRouter.get("/city/:city", RestaurantController.getCityRestaurants);
-protectedRouter.get("/zone/:zoneId", RestaurantController.getZoneRestaurants);
+protectedRouter.get(
+  "/location/nearby",
+  RestaurantController.getNearbyRestaurants
+);
+protectedRouter.get(
+  "/location/city/:city",
+  RestaurantController.getCityRestaurants
+);
+protectedRouter.post(
+  "/location/zone/:zoneId",
+  RestaurantController.getZoneRestaurants
+);
 
-// Status & Availability
-protectedRouter.patch("/:id/status", RestaurantController.getRestaurantStatus);
-protectedRouter.get("/open", RestaurantController.isRestaurantOpen);
+// // Status & Availability
+protectedRouter.get("/:id/status", RestaurantController.getRestaurantStatus);
+protectedRouter.get("/:id/open", RestaurantController.isRestaurantOpen);
 protectedRouter.patch(
   "/:id/opening",
   RestaurantController.updateRestaurantOpeningHours
@@ -65,7 +95,7 @@ protectedRouter.patch(
   RestaurantController.updateRestaurantHolidays
 );
 
-// Menu Management
+// // Menu Management
 protectedRouter
   .route("/:id/menu")
   .get(RestaurantController.getRestaurantMenu)
@@ -81,88 +111,88 @@ protectedRouter.post(
   RestaurantController.createMultipleRestaurantMenus
 );
 
-// Media Management
-protectedRouter.post("/:id/logo", RestaurantController.updateRestaurantLogo);
-protectedRouter.post(
-  "/:id/cover",
-  RestaurantController.updateRestaurantCoverImage
-);
-protectedRouter.post(
-  "/:id/images",
-  RestaurantController.addRestaurantGalleryImage
-);
-protectedRouter.delete(
-  "/:id/image/:imageId",
-  RestaurantController.deleteRestaurantImage
-);
+// // Media Management
+// protectedRouter.post("/:id/logo", RestaurantController.updateRestaurantLogo);
+// protectedRouter.post(
+//   "/:id/cover",
+//   RestaurantController.updateRestaurantCoverImage
+// );
+// protectedRouter.post(
+//   "/:id/images",
+//   RestaurantController.addRestaurantGalleryImage
+// );
+// protectedRouter.delete(
+//   "/:id/image/:imageId",
+//   RestaurantController.deleteRestaurantImage
+// );
 
-// Delivery & Order
-protectedRouter
-  .route("/:id/delivery")
-  .patch(RestaurantController.updateDeliveryOptions)
-  .get(RestaurantController.getDeliveryOptions);
+// // Delivery & Order
+// protectedRouter
+//   .route("/:id/delivery")
+//   .patch(RestaurantController.updateDeliveryOptions)
+//   .get(RestaurantController.getDeliveryOptions);
 
-protectedRouter
-  .route("/:id/slots")
-  .post(RestaurantController.createDeliveryTimeSlot)
-  .get(RestaurantController.getDeliveryTimeSlots);
+// protectedRouter
+//   .route("/:id/slots")
+//   .post(RestaurantController.createDeliveryTimeSlot)
+//   .get(RestaurantController.getDeliveryTimeSlots);
 
-// Offers & Promotions
-protectedRouter
-  .route("/:id/offers")
-  .post(RestaurantController.createRestaurantOffer)
-  .get(RestaurantController.getActiveRestaurantOffers);
+// // Offers & Promotions
+// protectedRouter
+//   .route("/:id/offers")
+//   .post(RestaurantController.createRestaurantOffer)
+//   .get(RestaurantController.getActiveRestaurantOffers);
 
-// Search & Discovery
-protectedRouter.get("/search", RestaurantController.searchRestaurants);
-protectedRouter.get("/filter", RestaurantController.filterRestaurants);
-protectedRouter.get("/trending", RestaurantController.getTrendingRestaurants);
+// // Search & Discovery
+// protectedRouter.get("/search", RestaurantController.searchRestaurants);
+// protectedRouter.get("/filter", RestaurantController.filterRestaurants);
+// protectedRouter.get("/trending", RestaurantController.getTrendingRestaurants);
 
-// Utility Endpoints
-protectedRouter.get(
-  "/enums/cuisines",
-  RestaurantController.getRestaurantCuisines
-);
-protectedRouter.get(
-  "/enums/food-types",
-  RestaurantController.getRestaurantFoodTypes
-);
-protectedRouter.get("/status/:id", RestaurantController.getRestaurantStatus);
+// // Utility Endpoints
+// protectedRouter.get(
+//   "/enums/cuisines",
+//   RestaurantController.getRestaurantCuisines
+// );
+// protectedRouter.get(
+//   "/enums/food-types",
+//   RestaurantController.getRestaurantFoodTypes
+// );
+// protectedRouter.get("/status/:id", RestaurantController.getRestaurantStatus);
 
 // ====================== ADMIN ROUTES (Auth + Admin Required) ======================
 
-const adminRouter = express.Router();
-adminRouter.use(authMiddleware, adminMiddleware);
+// const adminRouter = express.Router();
+// adminRouter.use(authMiddleware, adminMiddleware);
 
-// Administration
-adminRouter.get("/:id/verify", RestaurantController.verifyRestaurant);
-adminRouter.patch("/:id/owners", RestaurantController.updateRestaurantOwners);
-adminRouter
-  .route("/:id/managers")
-  .post(RestaurantController.addRestaurantManager)
-  .delete(RestaurantController.removeRestaurantManager);
+// // Administration
+// adminRouter.get("/:id/verify", RestaurantController.verifyRestaurant);
+// adminRouter.patch("/:id/owners", RestaurantController.updateRestaurantOwners);
+// adminRouter
+//   .route("/:id/managers")
+//   .post(RestaurantController.addRestaurantManager)
+//   .delete(RestaurantController.removeRestaurantManager);
 
-// Offers Management
-adminRouter
-  .route("/offers/:offerId")
-  .patch(RestaurantController.updateRestaurantOffers)
-  .patch(RestaurantController.toggleRestaurantOffers);
+// // Offers Management
+// adminRouter
+//   .route("/offers/:offerId")
+//   .patch(RestaurantController.updateRestaurantOffers)
+//   .patch(RestaurantController.toggleRestaurantOffers);
 
-// Analytics
-adminRouter.get("/:id/analytics", RestaurantController.getRestaurantAnalytics);
-adminRouter.get(
-  "/:id/ratings",
-  RestaurantController.getRestaurantRatingsAnalytics
-);
-adminRouter.get(
-  "/:id/timings",
-  RestaurantController.getRestaurantTimingsAnalytics
-);
+// // Analytics
+// adminRouter.get("/:id/analytics", RestaurantController.getRestaurantAnalytics);
+// adminRouter.get(
+//   "/:id/ratings",
+//   RestaurantController.getRestaurantRatingsAnalytics
+// );
+// adminRouter.get(
+//   "/:id/timings",
+//   RestaurantController.getRestaurantTimingsAnalytics
+// );
 
 // ====================== COMBINE ALL ROUTES ======================
 
-router.use(publicRouter);
+// router.use(publicRouter);
 router.use(protectedRouter);
-router.use(adminRouter);
+// router.use(adminRouter);
 
 export default router;

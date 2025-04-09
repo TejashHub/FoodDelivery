@@ -1,6 +1,11 @@
+// External Package
 import { StatusCodes } from "http-status-codes";
-import ApiError from "../utils/apiError";
-import logger from "../logger/winston.logger";
+
+// Utils
+import ApiError from "../utils/apiError.js";
+
+// Logger
+import logger from "../logger/winston.logger.js";
 
 export const adminMiddleware = (req, res, next) => {
   try {

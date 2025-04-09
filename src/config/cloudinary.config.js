@@ -5,7 +5,7 @@
 
 import { v2 as cloudinary } from "cloudinary";
 import logger from "../logger/winston.logger.js";
-import fs from "fs";
+import fs from "fs/promises";
 
 import {
   CLOUDINARY_NAME,
@@ -25,7 +25,6 @@ const uploadFileToCloudinary = async (localFilePath) => {
     const response = await cloudinary.uploader.upload(localFilePath, {
       resource_type: "auto",
     });
-    fs.unlinkSync(localFilePath);
     return response;
   } catch (error) {
     fs.unlink(localFilePath);

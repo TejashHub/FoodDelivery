@@ -35,8 +35,9 @@ export const adminController = {
       search,
       page = 1,
       limit = 10,
-      fields = "fullName, userName, email, phone, role, isVerified addresses",
+      fields = "fullName userName email  phone  role isVerified addresses",
     } = req.query;
+
     const filter = {};
 
     // If search query is provided, apply filters to the database search

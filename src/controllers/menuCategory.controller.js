@@ -1,14 +1,27 @@
+// Database
 import mongoose from "mongoose";
-import Restaurant from "../../models/restaurant.model.js";
-import MenuCategory from "../../models/menuCategory.model.js";
-import MenuItem from "../../models/menuItem.model.js";
-import asyncHandler from "../../middlewares/asyncHandler.middleware.js";
-import { ApiError } from "../../errors/ApiError.js";
+
+// External Package
 import { StatusCodes } from "http-status-codes";
+import sharp from "sharp";
+
+// Models
+import Restaurant from "../models/restaurant.model.js";
+import MenuCategory from "../models/menuCategory.model.js";
+import MenuItem from "../models/menuItem.model.js";
+
+// Config
 import {
-  cloudinaryFileUpload,
-  cloudinaryFileRemove,
-} from "../../utils/cloudinary.js";
+  uploadFileToCloudinary,
+  removeFileToCloudinary,
+} from "../config/cloudinary.config.js";
+
+// Middleware
+import asyncHandler from "../middleware/asyncHandler.middleware.js";
+
+// Utils
+import ApiError from "../utils/apiError.js";
+import ApiResponse from "../utils/apiResponse.js";
 
 export const MenuCategoryController = {
   // Core CRUD Operations
@@ -25,17 +38,19 @@ export const MenuCategoryController = {
 
     const total = await MenuCategory.countDocuments();
 
-    return res.status(StatusCodes.OK).json({
-      success: true,
-      message: "Categories retrieved successfully",
-      data: { categories },
-      meta: {
-        page: Number(page),
-        limit: Number(limit),
-        total,
-        totalPages: Math.ceil(total / limit),
+    return new ApiResponse(
+      StatusCodes.OK,
+      {
+        data: { categories },
+        meta: {
+          page: Number(page),
+          limit: Number(limit),
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
       },
-    });
+      "Categories retrieved successfully"
+    ).send(res);
   }),
 
   getMenuCategoryController: asyncHandler(async (req, res) => {
@@ -54,33 +69,35 @@ export const MenuCategoryController = {
       throw new ApiError(StatusCodes.NOT_FOUND, "Category not found");
     }
 
-    return res.status(StatusCodes.OK).json({
-      success: true,
-      message: "Category retrieved successfully",
-      data: { category },
-    });
+    return new ApiResponse(
+      StatusCodes.OK,
+      { data: category },
+      "Category retrieved successfully"
+    ).send(res);
   }),
 
   createMenuCategoryController: asyncHandler(async (req, res) => {
-    const { name, restaurant } = req.body;
+    const { restaurantId } = req.body;
 
-    if (!name || !restaurant) {
-      throw new ApiError(
-        StatusCodes.BAD_REQUEST,
-        "Name and restaurant are required"
-      );
+    if (!mongoose.Types.ObjectId.isValid(restaurantId)) {
+      throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid id");
     }
 
-    const restaurantExit = await Restaurant.findById(restaurant);
+    const imageFilePaths = req.file?.path;
+
+    const upload = await uploadFileToCloudinary(imageFilePaths);
+
+    if (!upload) {
+      throw new ApiError(StatusCodes.BAD_REQUEST, "failed to upload file");
+    }
+
+    const restaurantExit = await Restaurant.findById(restaurantId);
 
     if (!restaurantExit) {
-      throw new ApiError(StatusCodes.NOT_FOUND, "Restaurant not found.");
+      throw new ApiError(StatusCodes.NOT_FOUND, "Restaurant not found");
     }
 
-    const existCategory = await MenuCategory.findOne({
-      name,
-      restaurant,
-    });
+    const existCategory = await MenuCategory.findById(restaurantId);
 
     if (existCategory) {
       throw new ApiError(
@@ -91,53 +108,71 @@ export const MenuCategoryController = {
 
     const category = await MenuCategory.create({
       ...req.body,
+      restaurant: restaurantId,
+      image: {
+        url: upload.url,
+        thumbnailUrl: upload.url,
+        altText: upload.display_name,
+      },
       createdBy: req.user._id,
       lastUpdatedBy: req.user._id,
     });
 
-    return res.status(StatusCodes.CREATED).json({
-      success: true,
-      message: "Category created successfully",
-      data: { category },
-    });
+    return new ApiResponse(
+      StatusCodes.CREATED,
+      category,
+      "Category created successfully"
+    ).send(res);
   }),
 
   updateMenuCategoryController: asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const updateData = req.body;
+    let updateData = { ...req.body };
 
+    // Validate the category ID
     if (!mongoose.Types.ObjectId.isValid(id)) {
       throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid category ID");
     }
 
-    if (updateData.restaurant) {
+    // Check if the restaurant field is being updated
+    if (updateData.hasOwnProperty("restaurant")) {
       throw new ApiError(
         StatusCodes.FORBIDDEN,
         "Cannot change category restaurant"
       );
     }
 
-    const category = await MenuCategory.findByIdAndUpdate(
-      {
-        id,
-        ...updateData,
-        lastUpdatedBy: req.user._id,
-      },
-      {
-        new: true,
-        runValidators: true,
+    // Handle image upload if a file is provided
+    if (req.file?.path) {
+      const upload = await uploadFileToCloudinary(req.file.path);
+      if (!upload) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, "Failed to upload file");
       }
+      updateData.image = {
+        url: upload.url,
+        thumbnailUrl: upload.url, // Assuming the same URL for simplicity
+        altText: upload.display_name || "Category image",
+      };
+    }
+
+    // Perform the update
+    const category = await MenuCategory.findByIdAndUpdate(
+      id,
+      { ...updateData, lastUpdatedBy: req.user._id },
+      { new: true, runValidators: true }
     );
 
+    // Check if the category was found and updated
     if (!category) {
       throw new ApiError(StatusCodes.NOT_FOUND, "Category not found");
     }
 
-    return res.status(StatusCodes.OK).json({
-      success: true,
-      message: "Category updated successfully",
-      data: { category },
-    });
+    // Send the response
+    return new ApiResponse(
+      StatusCodes.OK,
+      { category },
+      "Category updated successfully"
+    ).send(res);
   }),
 
   deleteMenuCategoryController: asyncHandler(async (req, res) => {
@@ -148,6 +183,10 @@ export const MenuCategoryController = {
     }
 
     const categoryWithItems = await MenuCategory.findById(id).select("items");
+
+    if (!categoryWithItems) {
+      throw new ApiError(StatusCodes.NOT_FOUND, "Category not found");
+    }
 
     if (categoryWithItems.items.length > 0) {
       throw new ApiError(
@@ -162,11 +201,10 @@ export const MenuCategoryController = {
       throw new ApiError(StatusCodes.NOT_FOUND, "Category not found");
     }
 
-    return res.status(StatusCodes.OK).json({
-      success: true,
-      message: "Category deleted successfully",
-      data: { category },
-    });
+    return new ApiResponse(
+      StatusCodes.OK,
+      "Category deleted successfully"
+    ).send(res);
   }),
 
   // Availability Management
@@ -174,8 +212,8 @@ export const MenuCategoryController = {
     const { id } = req.params;
     const { isActive } = req.body;
 
-    if (typeof isActive !== Boolean) {
-      throw new ApiError(StatusCodes.BAD_REQUEST, "isActive must be a boolean");
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid id");
     }
 
     const category = await MenuCategory.findByIdAndUpdate(
@@ -191,18 +229,20 @@ export const MenuCategoryController = {
       throw new ApiError(StatusCodes.NOT_FOUND, "Category not found");
     }
 
-    return res.status(StatusCodes.OK).json({
-      success: true,
-      message: `Category ${
-        isActive ? "activated" : "deactivated"
-      } successfully`,
-      data: { category },
-    });
+    return new ApiResponse(
+      StatusCodes.OK,
+      { data: category },
+      `Category ${isActive ? "activated" : "deactivated"} successfully`
+    );
   }),
 
   availableTimesCategory: asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { start, end, isTimeRestricted } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid id");
+    }
 
     const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
     if (start && !timeRegex.test(start)) {
@@ -233,19 +273,23 @@ export const MenuCategoryController = {
       throw new ApiError(StatusCodes.NOT_FOUND, "Category not found");
     }
 
-    return res.status(StatusCodes.OK).json({
-      success: true,
-      message: "Category availability times updated",
-      data: {
+    return new ApiResponse(
+      StatusCodes.OK,
+      {
         availableTimes: category.availableTimes,
         isTimeRestricted: category.isTimeRestricted,
       },
-    });
+      "Category availability days updated"
+    ).send(res);
   }),
 
-  availableTimesCategory: asyncHandler(async (req, res) => {
+  availableDaysCategory: asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { daysAvailable } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid id");
+    }
 
     if (!Array.isArray(daysAvailable)) {
       throw new ApiError(
@@ -279,15 +323,21 @@ export const MenuCategoryController = {
       throw new ApiError(StatusCodes.NOT_FOUND, "Category not found");
     }
 
-    return res.status(StatusCodes.OK).json({
-      success: true,
-      message: "Category available days updated",
-      data: { daysAvailable: category.daysAvailable },
-    });
+    return new ApiResponse(
+      StatusCodes.OK,
+      {
+        data: { daysAvailable: category.daysAvailable },
+      },
+      "Category available days updated"
+    ).send(res);
   }),
 
   checkAvailabilityCategory: asyncHandler(async (req, res) => {
     const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid id");
+    }
 
     const category = await MenuCategory.findById(id);
 
@@ -297,30 +347,34 @@ export const MenuCategoryController = {
 
     const isAvailable = category.isCurrentlyAvailable();
 
-    return res.status(StatusCodes.OK).json({
-      success: true,
-      message: isAvailable
-        ? "Category is currently available"
-        : "Category is not available",
-      data: {
-        isAvailable,
-        currentDay: new Date()
-          .toLocaleString("en-us", { weekday: "short" })
-          .toLowerCase(),
-        currentTime: new Date().toLocaleTimeString("en-US", {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-        requirements: {
-          isActive: category.isActive,
-          daysAvailable: category.daysAvailable,
-          ...(category.isTimeRestricted && {
-            availableTimes: category.availableTimes,
+    return new ApiResponse(
+      StatusCodes.OK,
+      {
+        data: {
+          isAvailable,
+          currentDay: new Date()
+            .toLocaleString("en-us", { weekday: "short" })
+            .toLowerCase(),
+          currentTime: new Date().toLocaleTimeString("en-US", {
+            hour: "2-digit",
+            minute: "2-digit",
           }),
+          requirements: {
+            isActive: category.isActive,
+            daysAvailable: category.daysAvailable,
+            ...(category.isTimeRestricted && {
+              availableTimes: category.availableTimes,
+            }),
+          },
         },
       },
-    });
+      isAvailable
+        ? "Category is currently available"
+        : "Category is not available"
+    ).send(res);
   }),
+
+  // PENDING
 
   // Item Relationships
   itemsCategory: asyncHandler(async (req, res) => {
@@ -511,10 +565,16 @@ export const MenuCategoryController = {
     }
   }),
 
+  // END PENDING
+
   // Display & Ordering
   displayOrderCategory: asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { displayOrder } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid id");
+    }
 
     if (typeof displayOrder !== "number" || displayOrder < 0) {
       throw new ApiError(
@@ -536,17 +596,17 @@ export const MenuCategoryController = {
       throw new ApiError(StatusCodes.NOT_FOUND, "Category not found");
     }
 
-    return res.status(StatusCodes.OK).json({
-      success: true,
-      message: "Display order updated",
-      data: {
+    return new ApiResponse(
+      StatusCodes.OK,
+      {
         category: {
           name: category.name,
           newOrder: category.displayOrder,
           restaurant: category.restaurant,
         },
       },
-    });
+      "Display order updated"
+    ).send(res);
   }),
 
   featuredOrderCategory: asyncHandler(async (req, res) => {
@@ -585,21 +645,23 @@ export const MenuCategoryController = {
       throw new ApiError(StatusCodes.NOT_FOUND, "Category not found");
     }
 
-    res.status(StatusCodes.OK).json({
-      success: true,
-      message: "Featured order updated",
-      data: {
+    return new ApiResponse(
+      StatusCodes.OK,
+      {
         category: {
           name: category.name,
           isFeatured: category.isFeatured,
           featuredOrder: category.featuredOrder,
         },
       },
-    });
+      "Featured order updated"
+    ).send(res);
   }),
 
   sortedCategory: asyncHandler(async (req, res) => {
     const { sortBy = "displayOrder", sortDirection = "asc" } = req.query;
+
+    console.log("Welcome");
 
     const validSortFields = [
       "displayOrder",
@@ -631,16 +693,18 @@ export const MenuCategoryController = {
       .select("name displayOrder featuredOrder isFeatured")
       .limit(100);
 
-    res.status(StatusCodes.OK).json({
-      success: true,
-      message: `Categories sorted by ${sortBy} (${sortDirection})`,
-      data: { categories },
-      meta: {
-        sortBy,
-        sortDirection,
-        count: categories.length,
+    return new ApiResponse(
+      StatusCodes.OK,
+      {
+        data: { categories },
+        meta: {
+          sortBy,
+          sortDirection,
+          count: categories.length,
+        },
       },
-    });
+      `Categories sorted by ${sortBy} (${sortDirection})`
+    ).send(res);
   }),
 
   reorderCategory: asyncHandler(async (req, res) => {
@@ -678,13 +742,13 @@ export const MenuCategoryController = {
 
       await session.commitTransaction();
 
-      res.status(StatusCodes.OK).json({
-        success: true,
-        message: `${newOrder.length} categories reordered`,
-        data: {
+      return new ApiResponse(
+        StatusCodes.OK,
+        {
           updatedCount: result.modifiedCount,
         },
-      });
+        `${newOrder.length} categories reordered`
+      ).send(res);
     } catch (error) {
       await session.abortTransaction();
       throw error;
@@ -711,8 +775,8 @@ export const MenuCategoryController = {
       await sharp(req.file.path).resize(200, 200).toFile(thumbnailPath);
 
       const [imageResult, thumbnailResult] = await Promise.all([
-        await cloudinaryFileUpload(imagePath),
-        await cloudinaryFileUpload(thumbnailPath),
+        await uploadFileToCloudinary(imagePath),
+        await uploadFileToCloudinary(thumbnailPath),
       ]);
 
       if (!imageResult || !thumbnailResult) {
@@ -737,22 +801,22 @@ export const MenuCategoryController = {
 
       if (!category) {
         await Promise.all([
-          cloudinaryFileRemove(imageResult.public_id),
-          cloudinaryFileRemove(thumbnailResult.public_id),
+          removeFileToCloudinary(imageResult.public_id),
+          removeFileToCloudinary(thumbnailResult.public_id),
         ]);
         throw new ApiError(StatusCodes.NOT_FOUND, "Category not found");
       }
 
-      return res.status(StatusCodes.OK).json({
-        success: true,
-        message: "Image uploaded successfully",
-        data: {
+      return new ApiResponse(
+        StatusCodes.OK,
+        {
           category: {
             name: category.name,
             image: category.image,
           },
         },
-      });
+        "Image uploaded successfully"
+      ).send(res);
     } catch (error) {
       throw error;
     }
@@ -781,8 +845,8 @@ export const MenuCategoryController = {
       await sharp(req.file.path).resize(200, 200).toFile(thumbnailPath);
 
       const [imageResult, thumbnailResult] = await Promise.all([
-        cloudinaryFileUpload(imagePath),
-        cloudinaryFileUpload(thumbnailPath),
+        uploadFileToCloudinary(imagePath),
+        uploadFileToCloudinary(thumbnailPath),
       ]);
 
       if (!imageResult || !thumbnailResult) {
@@ -794,7 +858,7 @@ export const MenuCategoryController = {
 
       if (category.image?.url) {
         const oldPublicId = category.image.url.split("/").pop().split(".")[0];
-        await cloudinaryFileRemove(oldPublicId);
+        await removeFileToCloudinary(oldPublicId);
       }
 
       if (category.image?.thumbnailUrl) {
@@ -802,7 +866,7 @@ export const MenuCategoryController = {
           .split("/")
           .pop()
           .split(".")[0];
-        await cloudinaryFileRemove(oldThumbnailPublicId);
+        await removeFileToCloudinary(oldThumbnailPublicId);
       }
 
       const updatedCategory = await MenuCategory.findByIdAndUpdate(
@@ -821,16 +885,18 @@ export const MenuCategoryController = {
         { new: true }
       ).select("name image");
 
-      return res.status(StatusCodes.OK).json({
-        success: true,
-        message: "Image updated successfully",
-        data: {
-          category: {
-            name: updatedCategory.name,
-            image: updatedCategory.image,
+      return new ApiResponse(
+        StatusCodes.OK,
+        {
+          data: {
+            category: {
+              name: updatedCategory.name,
+              image: updatedCategory.image,
+            },
           },
         },
-      });
+        "Image updated successfully"
+      ).send(res);
     } catch (error) {
       throw error;
     }
@@ -856,8 +922,8 @@ export const MenuCategoryController = {
         .pop()
         .split(".")[0];
       await Promise.all([
-        cloudinaryFileRemove(publicId),
-        thumbnailPublicId && cloudinaryFileRemove(thumbnailPublicId),
+        removeFileToCloudinary(publicId),
+        thumbnailPublicId && removeFileToCloudinary(thumbnailPublicId),
       ]);
 
       const updatedCategory = await MenuCategory.findByIdAndUpdate(
@@ -869,16 +935,18 @@ export const MenuCategoryController = {
         { new: true }
       ).select("name");
 
-      return res.status(StatusCodes.OK).json({
-        success: true,
-        message: "Image deleted successfully",
-        data: {
-          category: {
-            name: updatedCategory.name,
-            image: null,
+      return new ApiResponse(
+        StatusCodes.OK,
+        {
+          data: {
+            category: {
+              name: updatedCategory.name,
+              image: null,
+            },
           },
         },
-      });
+        "Image deleted successfully"
+      ).send(req);
     } catch (error) {
       throw new ApiError(
         StatusCodes.INTERNAL_SERVER_ERROR,
@@ -891,7 +959,7 @@ export const MenuCategoryController = {
   searchCategory: asyncHandler(async (req, res) => {
     const { query, page = 1, limit = 10 } = req.body;
 
-    if (!query || !query.trim().length < 2) {
+    if (!query || query.trim().length < 2) {
       throw new ApiError(
         StatusCodes.BAD_REQUEST,
         "Search query must be at least 2 characters long"
@@ -899,7 +967,7 @@ export const MenuCategoryController = {
     }
 
     const skip = (page - 1) * limit;
-    const searchRegex = new RegExp(q, "i");
+    const searchRegex = new RegExp(query, "i");
 
     const [categories, total] = await Promise.all([
       MenuCategory.find({
@@ -923,18 +991,20 @@ export const MenuCategoryController = {
       }),
     ]);
 
-    return res.status(StatusCodes.OK).json({
-      success: true,
-      message: `${categories.length} categories found`,
-      data: { categories },
-      meta: {
-        query: q,
-        page: Number(page),
-        limit: Number(limit),
-        total,
-        totalPages: Math.ceil(total / limit),
+    return new ApiResponse(
+      StatusCodes.OK,
+      {
+        data: { categories },
+        meta: {
+          query,
+          page: Number(page),
+          limit: Number(limit),
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
       },
-    });
+      `${categories.length} categories found`
+    ).send(res);
   }),
 
   filterCategory: asyncHandler(async (req, res) => {
@@ -965,18 +1035,21 @@ export const MenuCategoryController = {
       MenuCategory.countDocuments(filter),
     ]);
 
-    return res.status(StatusCodes.OK).json({
-      success: true,
-      message: `${categories.length} categories found`,
-      data: { categories },
-      meta: {
-        page: Number(page),
-        limit: Number(limit),
-        total,
-        totalPages: Math.ceil(total / limit),
-        filters: Object.keys(filter).length > 0 ? filter : "No filters applied",
+    return new ApiResponse(
+      StatusCodes.OK,
+      {
+        data: { categories },
+        meta: {
+          page: Number(page),
+          limit: Number(limit),
+          total,
+          totalPages: Math.ceil(total / limit),
+          filters:
+            Object.keys(filter).length > 0 ? filter : "No filters applied",
+        },
       },
-    });
+      `${categories.length} categories found`
+    ).send(res);
   }),
 
   timeAvailabilityCategory: asyncHandler(async (req, res) => {
@@ -1149,21 +1222,23 @@ export const MenuCategoryController = {
       }),
     ]);
 
-    res.status(StatusCodes.OK).json({
-      success: true,
-      message: `${categories.length} currently available categories`,
-      data: {
-        categories,
-        currentTime: `${currentHours}:${currentMinutes}`,
-        currentDay,
+    return new ApiResponse(
+      StatusCodes.OK,
+      {
+        data: {
+          categories,
+          currentTime: `${currentHours}:${currentMinutes}`,
+          currentDay,
+        },
+        meta: {
+          page: Number(page),
+          limit: Number(limit),
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
       },
-      meta: {
-        page: Number(page),
-        limit: Number(limit),
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
-    });
+      `${categories.length} currently available categories`
+    ).send(res);
   }),
 
   dayAvailablityCategory: asyncHandler(async (req, res) => {
@@ -1172,8 +1247,9 @@ export const MenuCategoryController = {
     const skip = (page - 1) * limit;
 
     const validDays = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+    const dayParam = day.trim().toLowerCase();
 
-    if (!validDays.includes(day.toLowerCase())) {
+    if (!validDays.includes(dayParam)) {
       throw new ApiError(
         StatusCodes.BAD_REQUEST,
         `Invalid day. Valid days are: ${validDays.join(", ")}`
@@ -1183,7 +1259,7 @@ export const MenuCategoryController = {
     const [categories, total] = await Promise.all([
       MenuCategory.find({
         isActive: true,
-        daysAvailable: day.toLowerCase(),
+        daysAvailable: dayParam,
       })
         .skip(skip)
         .limit(limit)
@@ -1191,22 +1267,24 @@ export const MenuCategoryController = {
 
       MenuCategory.countDocuments({
         isActive: true,
-        daysAvailable: day.toLowerCase(),
+        daysAvailable: dayParam,
       }),
     ]);
 
-    res.status(StatusCodes.OK).json({
-      success: true,
-      message: `${categories.length} categories available on ${day}`,
-      data: { categories },
-      meta: {
-        day,
-        page: Number(page),
-        limit: Number(limit),
-        total,
-        totalPages: Math.ceil(total / limit),
+    return new ApiResponse(
+      StatusCodes.OK,
+      {
+        data: { categories },
+        meta: {
+          day: dayParam,
+          page: Number(page),
+          limit: Number(limit),
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
       },
-    });
+      `${categories.length} categories available on ${dayParam}`
+    ).send(res);
   }),
 
   colorCategory: asyncHandler(async (req, res) => {
@@ -1234,18 +1312,20 @@ export const MenuCategoryController = {
       }),
     ]);
 
-    return res.status(StatusCodes.OK).json({
-      success: true,
-      message: `${categories.length} categories with color ${color}`,
-      data: { categories },
-      meta: {
-        color,
-        page: Number(page),
-        limit: Number(limit),
-        total,
-        totalPages: Math.ceil(total / limit),
+    return new ApiResponse(
+      StatusCodes.OK,
+      {
+        data: { categories },
+        meta: {
+          color,
+          page: Number(page),
+          limit: Number(limit),
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
       },
-    });
+      `${categories.length} categories with color ${color}`
+    ).send(res);
   }),
 
   // Bulk Operations

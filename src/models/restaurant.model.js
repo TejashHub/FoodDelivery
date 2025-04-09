@@ -1,25 +1,21 @@
 import mongoose, { Schema } from "mongoose";
+import MenuCategory from "./menuCategory.model.js";
+import MenuItem from "./menuItem.model.js";
+import DeliveryZone from "./deliveryZone.model.js";
 
 const restaurantSchema = new Schema(
   {
     name: {
       type: String,
-      required: true,
-      trim: true,
-      maxlength: 100,
     },
     slug: {
       type: String,
-      unique: true,
-      lowercase: true,
     },
     description: {
       type: String,
-      maxlength: 500,
     },
     shortDescription: {
       type: String,
-      maxlength: 100,
     },
     restaurantChain: String,
     franchiseId: String,
@@ -37,6 +33,7 @@ const restaurantSchema = new Schema(
           "Desserts",
           "Beverages",
           "Fast Food",
+          "Vegan",
           "Street Food",
           "Bakery",
           "Seafood",
@@ -57,22 +54,14 @@ const restaurantSchema = new Schema(
     location: {
       address: {
         type: String,
-        required: true,
       },
       landmark: String,
       city: {
         type: String,
-        required: true,
       },
       state: String,
       pinCode: {
         type: String,
-        required: true,
-        validate: {
-          validator: function (v) {
-            return /^\d{6}$/.test(v);
-          },
-        },
       },
       geoLocation: {
         type: {
@@ -82,47 +71,25 @@ const restaurantSchema = new Schema(
         },
         coordinates: {
           type: [Number],
-          required: true,
-          validate: {
-            validator: function (v) {
-              return (
-                v.length === 2 &&
-                v[0] >= -180 &&
-                v[0] <= 180 &&
-                v[1] >= -90 &&
-                v[1] <= 90
-              );
-            },
-          },
         },
       },
-      zoneId: { type: Schema.Types.ObjectId, ref: "DeliveryZone" }, // Fixed reference
+      zoneId: { type: Schema.Types.ObjectId, ref: "DeliveryZone" },
     },
-
     contact: {
       phone: {
         type: String,
-        required: true,
-        validate: {
-          validator: function (v) {
-            return /^[0-9]{10}$/.test(v);
-          },
-        },
       },
       alternatePhone: String,
       email: {
         type: String,
-        lowercase: true,
-        validate: {
-          validator: function (v) {
-            return /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/.test(v);
-          },
-        },
       },
       website: String,
     },
-
-    type: Map,
+    type: {
+      restaurant: { type: Boolean, required: true },
+      dineIn: { type: Boolean, required: true },
+      cloudKitchen: { type: Boolean, required: true },
+    },
     openingHours: [
       {
         day: {
@@ -137,8 +104,8 @@ const restaurantSchema = new Schema(
             "Sunday",
           ],
         },
-        open: { type: String, match: /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/ },
-        close: { type: String, match: /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/ },
+        open: { type: String },
+        close: { type: String },
         isClosed: { type: Boolean, default: false },
       },
     ],
@@ -146,9 +113,6 @@ const restaurantSchema = new Schema(
     holidays: [Date],
     preparationTime: {
       type: Number,
-      min: 5,
-      max: 120,
-      default: 25,
     },
 
     deliveryDetails: {
@@ -173,8 +137,6 @@ const restaurantSchema = new Schema(
 
     priceRange: {
       type: Number,
-      min: 1,
-      max: 4,
     },
     offers: [
       {
@@ -229,11 +191,6 @@ const restaurantSchema = new Schema(
     ],
     fssaiLicenseNumber: {
       type: String,
-      validate: {
-        validator: function (v) {
-          return /^[0-9]{14}$/.test(v);
-        },
-      },
     },
     gstNumber: String,
 

@@ -17,11 +17,14 @@ import {
   uploadFileToCloudinary,
   removeFileToCloudinary,
 } from "../config/cloudinary.config.js";
+import { create } from "domain";
+import User from "../models/user.model.js";
 
 const RestaurantController = {
   // Core Restaurant Operations
   createRestaurant: asyncHandler(async (req, res) => {
     const restaurantData = req.body;
+
     if (
       [
         restaurantData.name,
@@ -36,6 +39,62 @@ const RestaurantController = {
       );
     }
 
+    // Upload logo
+    const logoFilePath = req.files.logo?.[0]?.path;
+    const coverImageFilePath = req.files.coverImage?.[0]?.path;
+
+    if (!logoFilePath || !coverImageFilePath) {
+      throw new ApiError(
+        StatusCodes.BAD_REQUEST,
+        "Logo or cover image not found"
+      );
+    }
+
+    const logo = await uploadFileToCloudinary(logoFilePath);
+    const coverImage = await uploadFileToCloudinary(coverImageFilePath);
+
+    if (!logo || !coverImage) {
+      throw new ApiError(
+        StatusCodes.BAD_REQUEST,
+        "Failed to upload logo or cover image"
+      );
+    }
+
+    // Upload images (restaurant images)
+    const imageFilePaths = req.files.images?.map((file) => file.path) || [];
+
+    const uploadedImages = await Promise.all(
+      imageFilePaths.map(async (imagePath) => {
+        const uploaded = await uploadFileToCloudinary(imagePath);
+        if (!uploaded) {
+          throw new ApiError(
+            StatusCodes.BAD_REQUEST,
+            "Failed to upload restaurant image"
+          );
+        }
+        return {
+          url: uploaded.secure_url,
+          caption: "",
+          isFeatured: false,
+        };
+      })
+    );
+
+    // Upload menu images (just array of URLs)
+    const uploadedMenuImages = await Promise.all(
+      imageFilePaths.map(async (imagePath) => {
+        const uploaded = await uploadFileToCloudinary(imagePath);
+        if (!uploaded) {
+          throw new ApiError(
+            StatusCodes.BAD_REQUEST,
+            "Failed to upload menu image"
+          );
+        }
+        return uploaded.secure_url;
+      })
+    );
+
+    // Create slug
     if (!restaurantData.slug) {
       restaurantData.slug = restaurantData.name
         .toLowerCase()
@@ -43,17 +102,28 @@ const RestaurantController = {
         .replace(/[^\w-]+/g, "");
     }
 
+    // Assign all images
+    restaurantData.logo = logo.secure_url;
+    restaurantData.coverImage = coverImage.secure_url;
+    restaurantData.images = uploadedImages;
+    restaurantData.menuImages = uploadedMenuImages;
+
     const restaurant = await Restaurant.create(restaurantData);
 
-    res.status(StatusCodes.CREATED).json({
-      success: true,
-      message: "Restaurant created successfully.",
-      data: restaurant,
-    });
+    return new ApiResponse(
+      StatusCodes.CREATED,
+      restaurant,
+      "Restaurant created successfully."
+    ).send(res);
   }),
 
   getAllRestaurants: asyncHandler(async (req, res) => {
+    // Parse and validate query parameters
     const {
+      search,
+      page = 1,
+      limit = 10,
+      fields = "foodType manager owner menu name contact cuisineType city isPureVeg",
       foodType,
       manager,
       owner,
@@ -64,17 +134,41 @@ const RestaurantController = {
       city,
       isPureVeg,
       sort,
-      page = 1,
-      limit = 10,
     } = req.query;
 
-    const filter = {};
+    // Validate numeric parameters
+    const pageNumber = Math.max(1, parseInt(page, 10)) || 1;
+    const limitNumber = Math.min(Math.max(1, parseInt(limit, 10)), 100) || 10;
 
-    const pageNumber = Math.max(1, parseInt(page)) | 1;
-    const limitNumber = Math.min(100, Math.max(1, parseInt(limit))) || 10;
+    // Initialize filter with default conditions
+    const filter = { isActive: true };
 
+    // Text search (optimized for performance)
+    if (search) {
+      if (mongoose.Types.ObjectId.isValid(search)) {
+        filter.$or = [{ _id: search }, { owner: search }, { managers: search }];
+      } else {
+        filter.$text = { $search: search };
+      }
+    }
+
+    // Field-specific filters
     if (foodType) {
-      filter.foodType = { $in: foodType.split(",").map((item) => item.trim()) };
+      const validTypes = [
+        "Vegetarian",
+        "Non-Vegetarian",
+        "Vegan",
+        "Eggitarian",
+        "Jain",
+      ];
+      const types = foodType.split(",").map((t) => t.trim());
+      if (types.some((t) => !validTypes.includes(t))) {
+        throw new ApiError(
+          StatusCodes.BAD_REQUEST,
+          "Invalid food type specified"
+        );
+      }
+      filter.foodType = { $in: types };
     }
 
     if (manager) {
@@ -105,47 +199,102 @@ const RestaurantController = {
     }
 
     if (name) {
-      filter.$text = { $search: name };
+      filter.name = new RegExp(name, "i");
     }
 
     if (contact) {
       const contactStr = contact.toString().trim();
+      const isPhone = /^\d{10}$/.test(contactStr);
+      const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactStr);
+
       filter.$or = [
-        { "contact.phone": { $regex: contactStr, $options: "i" } },
-        { "contact.email": { $regex: contactStr, $options: "i" } },
-      ];
+        isPhone ? { "contact.phone": contactStr } : null,
+        isEmail ? { "contact.email": contactStr.toLowerCase() } : null,
+      ].filter(Boolean);
     }
 
     if (cuisineType) {
-      filter.cuisineType = {
-        $in: cuisineType.split(",").map((item) => item.trim()),
-      };
+      const validCuisines = [
+        "North Indian",
+        "South Indian",
+        "Chinese",
+        "Italian",
+      ]; // Extend as needed
+      const cuisines = cuisineType.split(",").map((c) => c.trim());
+      if (cuisines.some((c) => !validCuisines.includes(c))) {
+        throw new ApiError(
+          StatusCodes.BAD_REQUEST,
+          "Invalid cuisine type specified"
+        );
+      }
+      filter.cuisineType = { $in: cuisines };
     }
 
     if (city) {
-      filter["location.city"] = { $regex: city, $options: "i" };
+      filter["location.city"] = new RegExp(city, "i");
     }
 
     if (isPureVeg !== undefined) {
+      if (isPureVeg !== "true" && isPureVeg !== "false") {
+        throw new ApiError(
+          StatusCodes.BAD_REQUEST,
+          "isPureVeg must be 'true' or 'false'"
+        );
+      }
       filter.isPureVeg = isPureVeg === "true";
     }
 
-    let sortOptions = {};
+    // Sorting logic
+    const sortOptions = {};
+    const allowedSortFields = [
+      "name",
+      "createdAt",
+      "rating.overall",
+      "priceRange",
+    ];
+
     if (sort) {
-      sort.split(",").forEach((field) => {
+      for (const field of sort.split(",")) {
         const [key, value] = field.split(":");
-        if (key && (value === "asc" || value === "desc")) {
+        if (
+          allowedSortFields.includes(key) &&
+          ["asc", "desc"].includes(value)
+        ) {
           sortOptions[key] = value === "desc" ? -1 : 1;
         }
-      });
+      }
     }
 
     if (Object.keys(sortOptions).length === 0) {
       sortOptions.createdAt = -1;
     }
 
+    // Field selection security
+    const allowedFields = new Set([
+      "name",
+      "description",
+      "location",
+      "contact",
+      "cuisineType",
+      "foodType",
+      "isPureVeg",
+      "rating",
+      "owner",
+      "managers",
+      "menu",
+    ]);
+
+    const selectedFields =
+      fields
+        .split(",")
+        .map((f) => f.trim())
+        .filter((f) => allowedFields.has(f))
+        .join(" ") || "-__v";
+
+    // Database operations
     const [restaurants, total] = await Promise.all([
       Restaurant.find(filter)
+        .select(selectedFields)
         .skip((pageNumber - 1) * limitNumber)
         .limit(limitNumber)
         .sort(sortOptions)
@@ -156,15 +305,17 @@ const RestaurantController = {
       Restaurant.countDocuments(filter),
     ]);
 
-    res.status(StatusCodes.OK).json({
-      success: true,
-      message: "Restaurant fetched successfully",
-      count: restaurants.length,
-      total,
-      page: pageNumber,
-      pages: Math.ceil(total / limitNumber),
-      data: restaurants,
-    });
+    return new ApiResponse(
+      StatusCodes.OK,
+      {
+        count: restaurants.length,
+        total,
+        page: pageNumber,
+        pages: Math.ceil(total / limitNumber),
+        restaurants,
+      },
+      "All restaurants fetched successfully"
+    ).send(res);
   }),
 
   getRestaurant: asyncHandler(async (req, res) => {
@@ -197,55 +348,149 @@ const RestaurantController = {
   updateRestaurant: asyncHandler(async (req, res) => {
     const { id } = req.params;
 
-    const restaurantData = req.body;
+    const updatedData = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid restaurant ID");
+      throw new ApiError(StatusCodes.NOT_FOUND, "Restaurant id not found");
     }
 
-    if (restaurantData.name) {
-      restaurantData.slug = restaurantData.name
+    const restaurant = await Restaurant.findById(id);
+    if (!restaurant) {
+      throw new ApiError(StatusCodes.NOT_FOUND, "Restaurant not found");
+    }
+
+    const logoFilePath = req.files?.logo?.[0]?.path;
+    if (logoFilePath) {
+      const logo = await uploadFileToCloudinary(logoFilePath);
+      if (logo?.secure_url) {
+        restaurant.logo = logo.secure_url;
+      }
+    }
+
+    const coverImageFilePath = req.files?.coverImage?.[0]?.path;
+    if (coverImageFilePath) {
+      const coverImage = await uploadFileToCloudinary(coverImageFilePath);
+      if (coverImage?.secure_url) {
+        restaurant.coverImage = coverImage.secure_url;
+      }
+    }
+
+    const imageFilePaths = req.files?.images?.map((file) => file.path) || [];
+    if (imageFilePaths.length > 0) {
+      const uploadedImages = await Promise.all(
+        imageFilePaths.map(async (imagePath) => {
+          const uploaded = await uploadFileToCloudinary(imagePath);
+          if (!uploaded) return null;
+          return {
+            url: uploaded.secure_url,
+            caption: "",
+            isFeatured: false,
+          };
+        })
+      );
+      restaurant.images = uploadedImages.filter(Boolean);
+    }
+
+    const uploadedMenuImages = await Promise.all(
+      imageFilePaths.map(async (imagePath) => {
+        const uploaded = await uploadFileToCloudinary(imagePath);
+        return uploaded?.secure_url || null;
+      })
+    );
+    if (uploadedMenuImages.length > 0) {
+      restaurant.menuImages = uploadedMenuImages.filter(Boolean);
+    }
+
+    if (updatedData.name && !updatedData.slug) {
+      updatedData.slug = updatedData.name
         .toLowerCase()
         .replace(/\s+/g, "-")
         .replace(/[^\w-]+/g, "");
     }
 
-    const updatedRestaurant = await Restaurant.findByIdAndUpdate(
-      id,
-      restaurantData,
-      { new: true, runValidators: true }
-    )
-      .populate("owner", "name email")
-      .populate("managers", "name email");
+    Object.assign(restaurant, updatedData);
 
-    if (!updatedRestaurant) {
-      throw new ApiError(StatusCodes.NOT_FOUND, "Restaurant not found");
-    }
+    await restaurant.save();
 
-    res.status(StatusCodes.OK).json({
-      success: true,
-      message: "Restaurant updated successfully",
-      data: updatedRestaurant,
-    });
+    return new ApiResponse(
+      StatusCodes.OK,
+      restaurant,
+      "Restaurant updated successfully."
+    ).send(res);
   }),
 
   deleteRestaurant: asyncHandler(async (req, res) => {
-    const { id } = req.body;
+    const { id } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid restaurant ID");
     }
 
-    const DeleteRestaurant = await Restaurant.findByIdAndDelete(id);
+    const restaurant = await Restaurant.findById(id);
 
-    if (!DeleteRestaurant) {
+    if (!restaurant) {
       throw new ApiError(StatusCodes.NOT_FOUND, "Restaurant not found");
     }
 
-    res.status(StatusCodes.OK).json({
-      success: true,
-      data: DeleteRestaurant,
-    });
+    // Remove logo
+    if (restaurant.logo) {
+      const logoDeleted = await removeFileToCloudinary(restaurant.logo);
+      if (!logoDeleted) {
+        throw new ApiError(
+          StatusCodes.BAD_REQUEST,
+          "Failed to delete logo from Cloudinary"
+        );
+      }
+    }
+
+    // Remove cover image
+    if (restaurant.coverImage) {
+      const coverDeleted = await removeFileToCloudinary(restaurant.coverImage);
+      if (!coverDeleted) {
+        throw new ApiError(
+          StatusCodes.BAD_REQUEST,
+          "Failed to delete cover image from Cloudinary"
+        );
+      }
+    }
+
+    // Remove additional images (restaurant images)
+    if (restaurant.images?.length > 0) {
+      await Promise.all(
+        restaurant.images.map(async (img) => {
+          const deleted = await removeFileToCloudinary(img.url);
+          if (!deleted) {
+            throw new ApiError(
+              StatusCodes.BAD_REQUEST,
+              "Failed to delete restaurant image"
+            );
+          }
+        })
+      );
+    }
+
+    // Remove menu images
+    if (restaurant.menuImages?.length > 0) {
+      await Promise.all(
+        restaurant.menuImages.map(async (imgUrl) => {
+          const deleted = await removeFileToCloudinary(imgUrl);
+          if (!deleted) {
+            throw new ApiError(
+              StatusCodes.BAD_REQUEST,
+              "Failed to delete menu image"
+            );
+          }
+        })
+      );
+    }
+
+    // Finally delete restaurant record
+    const deletedRestaurant = await Restaurant.findByIdAndDelete(id);
+
+    return new ApiResponse(
+      StatusCodes.OK,
+      "Restaurant deleted successfully"
+    ).send(res);
   }),
 
   deleteManyRestaurants: asyncHandler(async (req, res) => {
@@ -267,30 +512,60 @@ const RestaurantController = {
       );
     }
 
-    const restaurant = await Restaurant.deleteMany({
-      _id: { $in: ids },
-    });
+    // Fetch all matching restaurants
+    const restaurants = await Restaurant.find({ _id: { $in: ids } });
 
-    if (restaurant.total === 0) {
+    if (restaurants.length === 0) {
       throw new ApiError(
         StatusCodes.NOT_FOUND,
-        "No restaurants found to delete"
+        "No restaurants found for the given IDs"
       );
     }
 
-    res.status(StatusCodes.OK).json({
-      success: true,
-      data: {
+    // Remove Cloudinary files for each restaurant
+    for (const restaurant of restaurants) {
+      // Delete logo
+      if (restaurant.logo) {
+        await removeFileToCloudinary(restaurant.logo);
+      }
+
+      // Delete coverImage
+      if (restaurant.coverImage) {
+        await removeFileToCloudinary(restaurant.coverImage);
+      }
+
+      // Delete restaurant images
+      if (restaurant.images?.length > 0) {
+        await Promise.all(
+          restaurant.images.map((img) => removeFileToCloudinary(img.url))
+        );
+      }
+
+      // Delete menu images
+      if (restaurant.menuImages?.length > 0) {
+        await Promise.all(
+          restaurant.menuImages.map((imgUrl) => removeFileToCloudinary(imgUrl))
+        );
+      }
+    }
+
+    // Delete restaurant records
+    const result = await Restaurant.deleteMany({ _id: { $in: ids } });
+
+    return new ApiResponse(
+      StatusCodes.OK,
+      {
         success: true,
-        message: "Restaurants deleted Successfully,",
-        total: restaurant.total,
+        deletedCount: result.deletedCount,
       },
-    });
+      `${result.deletedCount} restaurants deleted successfully`
+    );
   }),
 
   // Location-Based Operations
   getNearbyRestaurants: asyncHandler(async (req, res) => {
     const { longitude, latitude, distance = 500 } = req.body;
+
     if (!longitude || !latitude) {
       throw new ApiError(
         StatusCodes.BAD_REQUEST,
@@ -300,6 +575,7 @@ const RestaurantController = {
 
     const lng = parseFloat(longitude);
     const lat = parseFloat(latitude);
+
     const maxDistance = parseInt(distance);
 
     if (isNaN(lng) || lng < -180 || lng > 180) {
@@ -328,15 +604,20 @@ const RestaurantController = {
       .populate("owner", "name email")
       .populate("menu.category", "name");
 
-    res.status(StatusCodes.OK).json({
-      success: true,
-      count: restaurants.length,
-      data: restaurants,
-    });
+    return new ApiResponse(
+      StatusCodes.OK,
+      {
+        count: restaurants.length,
+        data: restaurants,
+      },
+      "Your Near by Restaurant fetched successfully"
+    );
   }),
 
   getCityRestaurants: asyncHandler(async (req, res) => {
-    const { city, page = 1, limit = 10 } = req.query;
+    const { page = 1, limit = 10 } = req.query;
+
+    const city = req.params.city;
 
     if (!city) {
       throw new ApiError(StatusCodes.BAD_REQUEST, "City name is required");
@@ -356,19 +637,22 @@ const RestaurantController = {
       Restaurant.countDocuments({ "location.city": new RegExp(city, "i") }),
     ]);
 
-    res.status(StatusCodes.OK).json({
-      success: true,
-      message: "Your city got successfully",
-      count: restaurants.length,
-      total,
-      page: pageNumber,
-      pages: Math.ceil(total / limitNumber),
-      data: restaurants,
-    });
+    return new ApiResponse(
+      StatusCodes.OK,
+      {
+        count: restaurants.length,
+        total,
+        page: pageNumber,
+        pages: Math.ceil(total / limitNumber),
+        data: restaurants,
+      },
+      "Your city got successfully"
+    );
   }),
 
   getZoneRestaurants: asyncHandler(async (req, res) => {
-    const { zoneId, page = 1, limit = 10 } = req.body;
+    const { page = 1, limit = 10 } = req.body;
+    const { zoneId } = req.params;
 
     if (!zoneId) {
       throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid zone ID required");
@@ -381,7 +665,7 @@ const RestaurantController = {
     const pageNumber = Math.max(1, parseInt(page)) || 1;
     const limitNumber = Math.min(100, Math.max(1, parseInt(limit))) || 10;
 
-    const [restaurants, total] = await Promise.all(
+    const [restaurants, total] = await Promise.all([
       Restaurant.find({
         "location.zoneId": zoneId,
       })
@@ -390,23 +674,29 @@ const RestaurantController = {
         .populate("owner", "name email")
         .populate("menu.category", "name")
         .populate("location.zoneId", "name"),
-      Restaurant.countDocuments({ "location.zoneId": zoneId })
-    );
+      Restaurant.countDocuments({ "location.zoneId": zoneId }),
+    ]);
 
-    res.status(StatusCodes.OK).json({
-      success: true,
-      message: "Your restaurant zone is fetched successfully",
-      count: restaurants.length,
-      total,
-      page: pageNumber,
-      pages: Math.ceil(total / limitNumber),
-      data: restaurants,
-    });
+    return new ApiResponse(
+      StatusCodes.OK,
+      {
+        count: restaurants.length,
+        total,
+        page: pageNumber,
+        pages: Math.ceil(total / limitNumber),
+        data: restaurants,
+      },
+      "Restaurants in the specified zone fetched successfully."
+    ).send(res);
   }),
 
   // Status & Availability
   getRestaurantStatus: asyncHandler(async (req, res) => {
-    const { id } = req.body;
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid id");
+    }
 
     const restaurant = await Restaurant.findById(id).select(
       "isOpenNow isActive isBusy isAcceptingOrders openingHours holidays"
@@ -435,10 +725,9 @@ const RestaurantController = {
         currentTime >= todayHours.open && currentTime <= todayHours.close;
     }
 
-    res.status(StatusCodes.OK).json({
-      success: true,
-      message: "Your restaurant status got successfully",
-      data: {
+    return new ApiResponse(
+      StatusCodes.OK,
+      {
         isOpenNow: restaurant.isOpenNow,
         isActive: restaurant.isActive,
         isBusy: restaurant.isBusy,
@@ -448,7 +737,8 @@ const RestaurantController = {
         todayHours: todayHours,
         nextHoliday: restaurant.holidays.find((h) => h > now),
       },
-    });
+      "Restaurant status retrieved successfully"
+    ).send(res);
   }),
 
   isRestaurantOpen: asyncHandler(async (req, res) => {
@@ -459,7 +749,7 @@ const RestaurantController = {
     );
 
     if (!restaurant) {
-      throw new ApiError(StatusCodes.BAD_GATEWAY, "Restaurant not found");
+      throw new ApiError(StatusCodes.NOT_FOUND, "Restaurant not found");
     }
 
     const now = new Date();
@@ -479,21 +769,25 @@ const RestaurantController = {
         currentTime >= todayHours.open && currentTime <= todayHours.close;
     }
 
-    res.status(StatusCodes.OK).json({
-      success: true,
-      message: "Your restaurant current status fetched successfully",
-      data: {
+    return new ApiResponse(
+      StatusCodes.OK,
+      {
         isOpen: isOpen && restaurant.isOpenNow,
         manualOverride: restaurant.isOpenNow !== isOpen,
         currentTime: currentTime,
         todayHours: todayHours,
         isHoliday: isHoliday,
       },
-    });
+      "Your restaurant current status fetched successfully"
+    ).send(res);
   }),
 
   updateRestaurantOpeningHours: asyncHandler(async (req, res) => {
     const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid id");
+    }
 
     const { openingHours } = req.body;
 
@@ -547,15 +841,19 @@ const RestaurantController = {
       throw new ApiError(StatusCodes.NOT_FOUND, "Restaurant not found");
     }
 
-    res.status(StatusCodes.OK).json({
-      success: true,
-      message: "Opening hours updated successfully",
-      data: updatedRestaurant.openingHours,
-    });
+    return new ApiResponse(
+      StatusCodes.OK,
+      updatedRestaurant.openingHours,
+      "Opening hours updated successfully"
+    ).send(res);
   }),
 
   updateRestaurantHolidays: asyncHandler(async (req, res) => {
     const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid id");
+    }
 
     const { holidays } = req.body;
 
@@ -567,12 +865,9 @@ const RestaurantController = {
     }
 
     const validateHolidays = holidays.map((holiday) => {
-      const date = new Date(dateString);
-      if (NaN(date.getTime())) {
-        throw new ApiError(
-          StatusCodes.BAD_REQUEST,
-          `Invalid date: ${dateString}`
-        );
+      const date = new Date(holiday);
+      if (isNaN(date.getTime())) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, `Invalid date: ${holiday}`);
       }
       return date;
     });
@@ -589,18 +884,22 @@ const RestaurantController = {
       throw new ApiError(StatusCodes.NOT_FOUND, "Restaurant not found");
     }
 
-    res.status(StatusCodes.OK).json({
-      success: true,
-      message: "Holidays updated successfully",
-      data: updatedRestaurant.holidays.map(
-        (d) => d.toISOString().split("T")[0]
-      ),
-    });
+    return new ApiResponse(
+      StatusCodes.OK,
+      updatedRestaurant.holidays.map((d) => d.toISOString().split("T")[0]),
+      "Holidays updated successfully"
+    ).send(res);
   }),
+
+  // STOP
 
   // Menu Management
   getRestaurantMenu: asyncHandler(async (req, res) => {
     const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid id");
+    }
 
     const restaurant = await Restaurant.findById(id)
       .populate({ path: "menu.category", select: "menu.description" })
@@ -617,11 +916,11 @@ const RestaurantController = {
       throw new ApiError(StatusCodes.BAD_REQUEST, "Restaurant not found");
     }
 
-    res.status(StatusCodes.OK).json({
-      success: true,
-      message: "Menu fetched successfully",
-      data: restaurant.menu,
-    });
+    return new ApiResponse(
+      StatusCodes.OK,
+      restaurant.menu,
+      "Menu fetched successfully"
+    ).send(res);
   }),
 
   createRestaurantMenu: asyncHandler(async (req, res) => {
