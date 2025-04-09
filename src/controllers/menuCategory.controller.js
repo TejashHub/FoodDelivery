@@ -18,6 +18,7 @@ import {
 
 // Middleware
 import asyncHandler from "../middleware/asyncHandler.middleware.js";
+import adminMiddleware from "../middleware/admin.middleware.js";
 
 // Utils
 import ApiError from "../utils/apiError.js";
@@ -1331,66 +1332,149 @@ export const MenuCategoryController = {
   // Bulk Operations
   createBulkCategory: asyncHandler(async (req, res) => {
     const { restaurantId } = req.params;
+    const files = req.files;
     const { categories } = req.body;
 
-    if (!categories || !Array.isArray(categories)) {
-      throw new ApiError(400, "Categories array is required");
+    if (!Array.isArray(categories)) {
+      throw new ApiError(
+        StatusCodes.BAD_REQUEST,
+        "Categories must be an array"
+      );
     }
 
-    const categoriesWithRestaurant = categories.map((category) => ({
-      ...category,
-      restaurant: restaurantId,
-      createdBy: req.user._id,
-      lastUpdatedBy: req.user._id,
-    }));
+    const categoriesWithImages = await Promise.all(
+      categories.map(async (category, index) => {
+        // Corrected file key pattern
+        const fileKey = `categories[${index}]image`;
+        const file = files[fileKey]?.[0];
 
-    const createdCategories = await MenuCategory.insertMany(
-      categoriesWithRestaurant
+        if (!file) {
+          throw new ApiError(
+            StatusCodes.BAD_REQUEST,
+            `Missing image for category ${index}`
+          );
+        }
+
+        const uploadedImage = await uploadFileToCloudinary(file.path);
+
+        if (!uploadedImage) {
+          throw new ApiError(
+            StatusCodes.INTERNAL_SERVER_ERROR,
+            "Failed to upload image"
+          );
+        }
+
+        return {
+          ...category,
+          name: category.name.trim(),
+          slug: category.slug || generateSlug(category.name),
+          restaurant: restaurantId,
+          createdBy: req.user._id,
+          lastUpdatedBy: req.user._id,
+          image: {
+            url: uploadedImage.secure_url,
+            thumbnailUrl: uploadedImage.secure_url,
+            altText: uploadedImage.display_name,
+          },
+        };
+      })
     );
 
-    res.status(StatusCodes.CREATED).json({
-      success: true,
-      message: "Categories created successfully",
-      data: {
-        createdCategories,
-      },
-    });
+    const createdCategories = await MenuCategory.insertMany(
+      categoriesWithImages
+    );
+
+    return new ApiResponse(
+      StatusCodes.CREATED,
+      createdCategories,
+      "Categories created successfully"
+    ).send(res);
   }),
 
   updateBulkCategory: asyncHandler(async (req, res) => {
     const { restaurantId } = req.params;
-    const { updates } = req.body;
+    const files = req.files;
+    const { categories } = req.body;
 
-    if (!updates || !Array.isArray(updates)) {
-      throw new ApiError(StatusCodes.BAD_REQUEST, "Updates array is required");
+    if (!Array.isArray(categories)) {
+      throw new ApiError(
+        StatusCodes.BAD_REQUEST,
+        "Categories must be an array"
+      );
     }
 
-    const bulkOps = updates.map((update) => ({
-      updateOne: {
-        filter: {
-          _id: update._id,
-          restaurant: restaurantId,
-        },
-        update: {
-          ...update,
-          lastUpdatedBy: req.user._id,
-        },
-      },
-    }));
+    const bulkOperations = await Promise.all(
+      categories.map(async (category, index) => {
+        const { _id, name, slug, ...updateData } = category;
 
-    const result = await MenuCategory.bulkWrite(bulkOps);
+        if (!_id) {
+          throw new ApiError(
+            StatusCodes.BAD_REQUEST,
+            "Category ID is required"
+          );
+        }
 
-    if (result.modifiedCount === 0) {
-      throw new ApiError(404, "No categories were updated");
+        // Handle image update
+        const fileKey = `categories[${index}][image]`;
+        const file = files?.[fileKey]?.[0];
+        let imageUpdate = {};
+
+        if (file) {
+          const uploadedImage = await uploadFileToCloudinary(file.path);
+          if (!uploadedImage) {
+            throw new ApiError(
+              StatusCodes.INTERNAL_SERVER_ERROR,
+              "Failed to upload image"
+            );
+          }
+          imageUpdate = {
+            "image.url": uploadedImage.secure_url,
+            "image.thumbnailUrl": uploadedImage.secure_url,
+            "image.altText": uploadedImage.display_name,
+          };
+        }
+
+        // Handle name/slug updates
+        const nameUpdate = {};
+        if (name) {
+          nameUpdate.name = name.trim();
+          nameUpdate.slug = slug || generateSlug(name);
+        }
+
+        return {
+          updateOne: {
+            filter: {
+              _id: _id,
+              restaurant: restaurantId,
+            },
+            update: {
+              $set: {
+                ...updateData,
+                ...nameUpdate,
+                ...imageUpdate,
+                lastUpdatedBy: req.user._id,
+              },
+            },
+          },
+        };
+      })
+    );
+
+    const result = await MenuCategory.bulkWrite(bulkOperations);
+
+    if (!result.modifiedCount) {
+      throw new ApiError(StatusCodes.NOT_FOUND, "No categories were updated");
     }
 
-    return res.status(StatusCodes.CREATED).json({
-      success: true,
-      message: "Categories updated successfully",
-      data: {
-        result,
-      },
+    const updatedCategories = await MenuCategory.find({
+      restaurant: restaurantId,
     });
+
+    return new ApiResponse(
+      StatusCodes.OK,
+      updatedCategories,
+      "Categories updated successfully"
+    ).send(res);
   }),
 
   deleteBulkCategory: asyncHandler(async (req, res) => {
@@ -1398,7 +1482,10 @@ export const MenuCategoryController = {
     const { categoryIds } = req.body;
 
     if (!categoryIds || !Array.isArray(categoryIds)) {
-      throw new ApiError(400, "Category IDs array is required");
+      throw new ApiError(
+        StatusCodes.BAD_REQUEST,
+        "Category IDs array is required"
+      );
     }
 
     const result = await MenuCategory.deleteMany({
@@ -1407,22 +1494,31 @@ export const MenuCategoryController = {
     });
 
     if (result.deletedCount === 0) {
-      throw new ApiError(404, "No categories were deleted");
+      throw new ApiError(StatusCodes.BAD_REQUEST, "No categories were deleted");
     }
 
-    return res.status(StatusCodes.CREATED).json({
-      success: true,
-      message: "Categories updated successfully",
-      data: {
-        result,
+    return new ApiResponse(
+      StatusCodes.OK,
+      {
+        data: {
+          result,
+        },
       },
-    });
+      "Categories updated successfully"
+    ).send(res);
   }),
 
   // SEO & Metadata
   createMetaCategory: asyncHandler(async (req, res) => {
     const { categoryId } = req.params;
     const { seoTitle, seoDescription, keywords } = req.body;
+
+    if ([seoTitle, seoDescription, keywords].some((field) => !field)) {
+      throw new ApiError(
+        StatusCodes.BAD_REQUEST,
+        "seoTitle, seoDescription and keywords are required"
+      );
+    }
 
     const category = await MenuCategory.findByIdAndUpdate(
       categoryId,
@@ -1440,47 +1536,58 @@ export const MenuCategoryController = {
     );
 
     if (!category) {
-      throw new ApiError(404, "Category not found");
+      throw new ApiError(StatusCodes.NOT_FOUND, "Category not found");
     }
 
-    return res.status(StatusCodes.CREATED).json({
-      success: true,
-      message: "Category metadata created successfully",
-      data: {
-        category,
+    return new ApiResponse(
+      StatusCodes.CREATED,
+      {
+        data: {
+          category,
+        },
       },
-    });
+      "Category metadata created successfully"
+    ).send(res);
   }),
 
   updateMetaCategory: asyncHandler(async (req, res) => {
     const { categoryId } = req.params;
     const { seoTitle, seoDescription } = req.body;
 
+    if ([seoTitle, seoDescription].some((field) => !field)) {
+      throw new ApiError(
+        StatusCodes.BAD_REQUEST,
+        "seoTitle, seoDescription  are required"
+      );
+    }
+
+    const updateFields = {
+      lastUpdatedBy: req.user._id,
+    };
+
+    if (seoTitle) updateFields["metadata.seoTitle"] = seoTitle;
+    if (seoDescription)
+      updateFields["metadata.seoDescription"] = seoDescription;
+
     const category = await MenuCategory.findByIdAndUpdate(
       categoryId,
-      {
-        $set: {
-          "metadata.seoTitle": seoTitle,
-          "metadata.seoDescription": seoDescription,
-        },
-        lastUpdatedBy: req.user._id,
-      },
-      {
-        new: true,
-      }
+      { $set: updateFields },
+      { new: true }
     );
 
     if (!category) {
-      throw new ApiError(404, "Category not found");
+      throw new ApiError(StatusCodes.NOT_FOUND, "Category not found");
     }
 
-    return res.status(StatusCodes.CREATED).json({
-      success: true,
-      message: "Category metadata created successfully",
-      data: {
-        category,
+    return new ApiResponse(
+      StatusCodes.OK,
+      {
+        data: {
+          category,
+        },
       },
-    });
+      "Category metadata created successfully"
+    ).send(res);
   }),
 
   updateMetaKeywordCategory: asyncHandler(async (req, res) => {
@@ -1489,7 +1596,7 @@ export const MenuCategoryController = {
 
     if (!["add", "remove", "replace"].includes(operation)) {
       throw new ApiError(
-        400,
+        StatusCodes.BAD_REQUEST,
         "Operation must be 'add', 'remove', or 'replace'"
       );
     }
@@ -1518,16 +1625,18 @@ export const MenuCategoryController = {
     );
 
     if (!category) {
-      throw new ApiError(404, "Category not found");
+      throw new ApiError(StatusCodes.NOT_FOUND, "Category not found");
     }
 
-    return res.status(StatusCodes.CREATED).json({
-      success: true,
-      message: `Keywords ${operation}ed successfully`,
-      data: {
-        category,
+    return new ApiResponse(
+      StatusCodes.OK,
+      {
+        data: {
+          category,
+        },
       },
-    });
+      `Keywords ${operation}ed successfully`
+    ).send(res);
   }),
 };
 

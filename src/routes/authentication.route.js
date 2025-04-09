@@ -10,7 +10,7 @@ import express from "express";
 import { authenticationController } from "../controllers/authentication.controller.js";
 
 // Middlewares
-import { authMiddleware } from "../middleware/auth.middleware.js";
+import authMiddleware from "../middleware/auth.middleware.js";
 import upload from "../middleware/multer.middleware.js";
 import validation from "../middleware/validation.middleware.js";
 import {

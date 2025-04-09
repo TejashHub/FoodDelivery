@@ -1,16 +1,37 @@
-import MenuItem from "../../models/menuItem.model.js";
-import asyncHandler from "../../middlewares/asyncHandler.middleware.js";
-import { ApiError } from "../../errors/ApiError.js";
+import mongoose from "mongoose";
+import { StatusCodes } from "http-status-codes";
+import { uploadFileToCloudinary } from "../config/cloudinary.config.js";
+import MenuItem from "../models/menuItem.model.js";
+import asyncHandler from "../middleware/asyncHandler.middleware.js";
+import ApiError from "../utils/apiError.js";
+import ApiResponse from "../utils/apiResponse.js";
 
-export const MenuItemController = {
+const MenuItemController = {
   // Core CRUD
   createMenuItem: asyncHandler(async (req, res) => {
-    const { itemId, restaurantId, categoryId } = req.body;
+    const {
+      itemId,
+      restaurantId,
+      categoryId,
+      name,
+      price,
+      isAvailable,
+      ingredients,
+      dietaryTags,
+    } = req.body;
 
-    const existingItem = await MenuItem.findOne({ itemId });
-    if (existingItem) {
-      throw new ApiError(StatusCodes.BAD_REQUEST, "Item ID must be unique");
-    }
+    const imageUploadResults = await Promise.all(
+      req.files.images.map(async (image) => {
+        const upload = await uploadFileToCloudinary(image.path);
+        if (!upload?.url) {
+          throw new ApiError(
+            StatusCodes.BAD_REQUEST,
+            "Error while uploading image to Cloudinary"
+          );
+        }
+        return upload.url;
+      })
+    );
 
     if (!mongoose.Types.ObjectId.isValid(restaurantId)) {
       throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid restaurant ID");
@@ -20,13 +41,96 @@ export const MenuItemController = {
       throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid category ID");
     }
 
-    const menuItem = await MenuItem.create(req.body);
-
-    res.status(StatusCodes.CREATED).json({
-      success: true,
-      message: "Menu item created successfully",
-      data: menuItem,
+    [itemId, name].forEach((item) => {
+      if (!item || typeof item !== "string") {
+        throw new ApiError(
+          StatusCodes.BAD_REQUEST,
+          "Item ID and Name must be valid strings"
+        );
+      }
     });
+
+    const parsedPrice = parseFloat(price);
+    if (isNaN(parsedPrice) || parsedPrice < 0) {
+      throw new ApiError(
+        StatusCodes.BAD_REQUEST,
+        "Price must be a non-negative number"
+      );
+    }
+
+    const parsedIsAvailable = isAvailable === "true" || isAvailable === true;
+
+    const parsedIngredients =
+      typeof ingredients === "string" ? JSON.parse(ingredients) : ingredients;
+    if (!Array.isArray(parsedIngredients)) {
+      throw new ApiError(
+        StatusCodes.BAD_REQUEST,
+        "Ingredients must be an array"
+      );
+    }
+
+    const allowedDietaryTags = [
+      "Gluten-Free",
+      "Vegan",
+      "Jain",
+      "Eggless",
+      "Contains Nuts",
+    ];
+    const parsedTags =
+      typeof dietaryTags === "string" ? JSON.parse(dietaryTags) : dietaryTags;
+    if (!Array.isArray(parsedTags)) {
+      throw new ApiError(
+        StatusCodes.BAD_REQUEST,
+        "Dietary tags must be an array"
+      );
+    }
+    const invalidTags = parsedTags.filter(
+      (tag) => !allowedDietaryTags.includes(tag)
+    );
+    if (invalidTags.length > 0) {
+      throw new ApiError(
+        StatusCodes.BAD_REQUEST,
+        `Invalid dietary tags: ${invalidTags.join(", ")}`
+      );
+    }
+
+    const parsedCustomizationOptions =
+      typeof req.body.customizationOptions === "string"
+        ? JSON.parse(req.body.customizationOptions)
+        : req.body.customizationOptions;
+
+    const parsedAddonGroups =
+      typeof req.body.addonGroups === "string"
+        ? JSON.parse(req.body.addonGroups)
+        : req.body.addonGroups;
+
+    const existingItem = await MenuItem.findOne({ itemId });
+    if (existingItem) {
+      throw new ApiError(StatusCodes.BAD_REQUEST, "Item ID must be unique");
+    }
+
+    const cleanName = name.trim();
+    const cleanItemId = itemId.trim();
+
+    const menuItem = await MenuItem.create({
+      itemId: cleanItemId,
+      name: cleanName,
+      restaurantId,
+      categoryId,
+      price: parsedPrice,
+      isAvailable: parsedIsAvailable,
+      ingredients: parsedIngredients,
+      customizationOptions: parsedCustomizationOptions,
+      addonGroups: parsedAddonGroups,
+      dietaryTags: parsedTags,
+      images: imageUploadResults,
+    });
+
+    return new ApiResponse(
+      StatusCodes.CREATED,
+      { data: menuItem },
+      "Menu item created successfully"
+    ).send(res);
   }),
 
   getAllMenuItems: asyncHandler(async (req, res) => {
@@ -39,6 +143,7 @@ export const MenuItemController = {
       minPrice,
       maxPrice,
       sortBy,
+      search,
     } = req.query;
 
     const filter = {};
@@ -47,12 +152,20 @@ export const MenuItemController = {
     if (categoryId) filter.categoryId = categoryId;
     if (isVeg) filter.isVeg = isVeg === "true";
     if (isAvailable) filter.isAvailable = isAvailable === "true";
-    if (dietaryTags) filter.dietaryTags = { $in: dietaryTags.split(",") };
+
+    if (dietaryTags) {
+      filter.dietaryTags = { $in: dietaryTags.split(",") };
+    }
 
     if (minPrice || maxPrice) {
       filter.price = {};
       if (minPrice) filter.price.$gte = Number(minPrice);
       if (maxPrice) filter.price.$lte = Number(maxPrice);
+    }
+
+    // Full-text search
+    if (search) {
+      filter.$text = { $search: search };
     }
 
     const sortOptions = {
@@ -69,10 +182,11 @@ export const MenuItemController = {
       .populate("restaurantId", "name")
       .populate("categoryId", "name");
 
-    res.status(StatusCodes.OK).json({
-      success: true,
-      data: menuItems,
-    });
+    return new ApiResponse(
+      StatusCodes.OK,
+      { data: menuItems },
+      "All menu items fetched successfully"
+    ).send(res);
   }),
 
   getMenuItemById: asyncHandler(async (req, res) => {
@@ -84,10 +198,11 @@ export const MenuItemController = {
       throw new ApiError(StatusCodes.NOT_FOUND, "Menu item not found");
     }
 
-    res.status(StatusCodes.OK).json({
-      success: true,
-      data: menuItem,
-    });
+    return new ApiResponse(
+      StatusCodes.OK,
+      { data: menuItem },
+      "Item fetched successfully"
+    ).send(res);
   }),
 
   updateMenuItem: asyncHandler(async (req, res) => {
@@ -320,3 +435,5 @@ export const MenuItemController = {
     });
   }),
 };
+
+export default MenuItemController;

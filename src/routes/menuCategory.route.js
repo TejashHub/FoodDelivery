@@ -2,8 +2,8 @@ import express from "express";
 
 import { MenuCategoryController } from "../controllers/menuCategory.controller.js";
 
-import { authMiddleware } from "../middleware/auth.middleware.js";
-import { adminMiddleware } from "../middleware/admin.middleware.js";
+import authMiddleware from "../middleware/auth.middleware.js";
+import adminMiddleware from "../middleware/admin.middleware.js";
 import upload from "../middleware/multer.middleware.js";
 
 const router = express.Router();
@@ -31,16 +31,34 @@ router.get("/color/:color", MenuCategoryController.colorCategory);
 
 // Bulk Operations
 router.post(
-  "/bulk",
-  upload.fields({ name: "image", maxCount: 10 }),
+  "/bulk/:restaurantId",
+  authMiddleware,
+  upload.fields(
+    Array.from({ length: 10 }, (_, i) => ({
+      name: `categories[${i}]image`,
+      maxCount: 1,
+    }))
+  ),
   MenuCategoryController.createBulkCategory
 );
+
 router.patch(
-  "/bulk",
-  upload.fields({ name: "image", maxCount: 10 }),
+  "/bulk/:restaurantId",
+  authMiddleware,
+  upload.fields(
+    Array.from({ length: 10 }, (_, i) => ({
+      name: `categories[${i}]image`,
+      maxCount: 1,
+    }))
+  ),
   MenuCategoryController.updateBulkCategory
 );
-router.delete("/bulk", MenuCategoryController.deleteBulkCategory);
+
+router.delete(
+  "/bulk/:restaurantId",
+  authMiddleware,
+  MenuCategoryController.deleteBulkCategory
+);
 
 // --- 🔹 Core CRUD Operations ---
 
@@ -139,9 +157,16 @@ router.delete(
 
 // --- 🔹 SEO & Metadata (Admin Only) ---
 
+router.use(authMiddleware);
 router.use(adminMiddleware);
-router.post("/:id/metadata", MenuCategoryController.createBulkCategory);
-router.patch("/:id/metadata", MenuCategoryController.updateBulkCategory);
-router.delete("/:id/keyword", MenuCategoryController.deleteBulkCategory);
+router.post("/:categoryId/metadata", MenuCategoryController.createMetaCategory);
+router.patch(
+  "/:categoryId/metadata",
+  MenuCategoryController.updateMetaCategory
+);
+router.patch(
+  "/:categoryId/keyword",
+  MenuCategoryController.updateMetaKeywordCategory
+);
 
 export default router;

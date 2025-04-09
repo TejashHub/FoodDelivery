@@ -4,8 +4,8 @@ import express from "express";
 import RestaurantController from "../controllers/restaurant.controller.js";
 
 // Middlewares
-import { authMiddleware } from "../middleware/auth.middleware.js";
-import { adminMiddleware } from "../middleware/admin.middleware.js";
+import authMiddleware from "../middleware/auth.middleware.js";
+import adminMiddleware from "../middleware/admin.middleware.js";
 import upload from "../middleware/multer.middleware.js";
 
 const router = express.Router();

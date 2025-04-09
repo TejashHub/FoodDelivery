@@ -11,7 +11,7 @@ import ApiError from "../utils/apiError.js";
 import { StatusCodes } from "http-status-codes";
 import TokenBlacklist from "../models/tokenBlacklist.model.js";
 
-export const authMiddleware = asyncHandler(async (req, _, next) => {
+const authMiddleware = asyncHandler(async (req, _, next) => {
   try {
     const token =
       req.cookies?.accessToken ||
@@ -24,6 +24,7 @@ export const authMiddleware = asyncHandler(async (req, _, next) => {
     const decoded = jwt.verify(token, ACCESS_TOKEN_SECRET);
 
     const isBlacklisted = await TokenBlacklist.findOne({ token });
+
     if (isBlacklisted) {
       throw new ApiError(StatusCodes.UNAUTHORIZED, "Invalid token");
     }
@@ -31,11 +32,13 @@ export const authMiddleware = asyncHandler(async (req, _, next) => {
     const user = await User.findById(decoded._id).select(
       "-password -refreshToken -resetPasswordToken -otp"
     );
+
     if (!user) {
       throw new ApiError(StatusCodes.UNAUTHORIZED, "User not found");
     }
 
     req.user = user;
+
     next();
   } catch (error) {
     if (error instanceof jwt.TokenExpiredError) {
@@ -47,3 +50,5 @@ export const authMiddleware = asyncHandler(async (req, _, next) => {
     throw error;
   }
 });
+
+export default authMiddleware;

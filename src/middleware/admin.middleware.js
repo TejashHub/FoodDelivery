@@ -7,7 +7,7 @@ import ApiError from "../utils/apiError.js";
 // Logger
 import logger from "../logger/winston.logger.js";
 
-export const adminMiddleware = (req, res, next) => {
+const adminMiddleware = (req, _, next) => {
   try {
     const user = req.user;
     if (!user) {
@@ -22,3 +22,5 @@ export const adminMiddleware = (req, res, next) => {
     next(error);
   }
 };
+
+export default adminMiddleware;

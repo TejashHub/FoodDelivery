@@ -4,8 +4,8 @@ import express from "express";
 import { adminController } from "../controllers/admin.controller.js";
 
 // Middleware
-import { authMiddleware } from "../middleware/auth.middleware.js";
-import { adminMiddleware } from "../middleware/admin.middleware.js";
+import authMiddleware from "../middleware/auth.middleware.js";
+import adminMiddleware from "../middleware/admin.middleware.js";
 import validation from "../middleware/validation.middleware.js";
 import upload from "../middleware/multer.middleware.js";
 
