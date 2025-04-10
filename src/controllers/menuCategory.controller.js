@@ -375,8 +375,6 @@ export const MenuCategoryController = {
     ).send(res);
   }),
 
-  // PENDING
-
   // Item Relationships
   itemsCategory: asyncHandler(async (req, res) => {
     const { id } = req.params;
@@ -400,20 +398,20 @@ export const MenuCategoryController = {
 
     const totalItems = await MenuItem.countDocuments({ category: id });
 
-    return res.status(StatusCodes.OK).json({
-      success: true,
-      message: "Category items retrieved",
-      data: {
+    return new ApiResponse(
+      StatusCodes.OK,
+      {
         items: category.items,
         categoryName: category.name,
+        meta: {
+          page: Number(page),
+          limit: Number(limit),
+          total: totalItems,
+          totalPages: Math.ceil(totalItems / limit),
+        },
       },
-      meta: {
-        page: Number(page),
-        limit: Number(limit),
-        total: totalItems,
-        totalPages: Math.ceil(totalItems / limit),
-      },
-    });
+      "Category items retrieved"
+    ).send(res);
   }),
 
   itemsFeaturedCategory: asyncHandler(async (req, res) => {
@@ -429,17 +427,17 @@ export const MenuCategoryController = {
       throw new ApiError(StatusCodes.NOT_FOUND, "Category not found");
     }
 
-    res.status(StatusCodes.OK).json({
-      success: true,
-      message: "Featured items retrieved",
-      data: {
+    return new ApiResponse(
+      StatusCodes.OK,
+      {
         featuredItems: category.featuredItems,
         category: {
           name: category.name,
           isFeatured: category.isFeatured,
         },
       },
-    });
+      "Featured items retrieved"
+    ).send(res);
   }),
 
   countCategory: asyncHandler(async (req, res) => {
@@ -454,15 +452,15 @@ export const MenuCategoryController = {
       throw new ApiError(StatusCodes.NOT_FOUND, "Category not found");
     }
 
-    return res.status(StatusCodes.OK).json({
-      success: true,
-      message: "Item count retrieved",
-      data: {
+    return new ApiResponse(
+      StatusCodes.OK,
+      {
         category: category.name,
         itemCount: count,
         hasItems: count > 0,
       },
-    });
+      "Item count retrieved"
+    ).send(res);
   }),
 
   createItemCategory: asyncHandler(async (req, res) => {
@@ -506,14 +504,11 @@ export const MenuCategoryController = {
 
       await session.commitTransaction();
 
-      res.status(StatusCodes.OK).json({
-        success: true,
-        message: "Item added to category",
-        data: {
-          category: category.name,
-          item: menuItem.name,
-        },
-      });
+      return new ApiResponse(
+        StatusCodes.OK,
+        { category: category.name, item: menuItem.name },
+        "Item added to category"
+      ).send(res);
     } catch (error) {
       await session.abortTransaction();
       throw error;
@@ -551,13 +546,13 @@ export const MenuCategoryController = {
 
       await session.commitTransaction();
 
-      res.status(StatusCodes.OK).json({
-        success: true,
-        message: "Item removed from category",
-        data: {
+      return new ApiResponse(
+        StatusCodes.OK,
+        {
           remainingItems: category.itemCount,
         },
-      });
+        "Item removed from category"
+      ).send(res);
     } catch (error) {
       await session.abortTransaction();
       throw error;
@@ -565,8 +560,6 @@ export const MenuCategoryController = {
       session.endSession();
     }
   }),
-
-  // END PENDING
 
   // Display & Ordering
   displayOrderCategory: asyncHandler(async (req, res) => {

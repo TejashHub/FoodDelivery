@@ -116,11 +116,27 @@ router.get(
 
 // --- 🔹 Item Relationships ---
 
-router.get("/:id/items", MenuCategoryController.itemsCategory);
-router.get("/:id/items/featured", MenuCategoryController.itemsFeaturedCategory);
-router.get("/:id/items/count", MenuCategoryController.countCategory);
-router.post("/:id/items", MenuCategoryController.createItemCategory);
-router.delete("/:id/items/:itemId", MenuCategoryController.deleteItemCategory);
+router.get("/:id/items", authMiddleware, MenuCategoryController.itemsCategory);
+router.get(
+  "/:id/items/featured",
+  authMiddleware,
+  MenuCategoryController.itemsFeaturedCategory
+);
+router.get(
+  "/:id/items/count",
+  authMiddleware,
+  MenuCategoryController.countCategory
+);
+router.post(
+  "/:id/items",
+  authMiddleware,
+  MenuCategoryController.createItemCategory
+);
+router.delete(
+  "/:id/items/:itemId",
+  authMiddleware,
+  MenuCategoryController.deleteItemCategory
+);
 
 // --- 🔹 Display & Ordering (with :id) ---
 
