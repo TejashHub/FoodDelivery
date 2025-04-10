@@ -1,6 +1,9 @@
 import mongoose from "mongoose";
 import { StatusCodes } from "http-status-codes";
-import { uploadFileToCloudinary } from "../config/cloudinary.config.js";
+import {
+  removeFileToCloudinary,
+  uploadFileToCloudinary,
+} from "../config/cloudinary.config.js";
 import MenuItem from "../models/menuItem.model.js";
 import asyncHandler from "../middleware/asyncHandler.middleware.js";
 import ApiError from "../utils/apiError.js";
@@ -206,51 +209,165 @@ const MenuItemController = {
   }),
 
   updateMenuItem: asyncHandler(async (req, res) => {
-    const allowedUpdates = [
-      "name",
-      "description",
-      "price",
-      "discountPrice",
-      "isVeg",
-      "ingredients",
-      "dietaryTags",
-      "customizationOptions",
-      "addonGroups",
-      "images",
-      "preparationTime",
-      "isAvailable",
-      "isBestSeller",
-    ];
-    const updates = Object.keys(req.body);
-    const isValidOperation = updates.every((update) =>
-      allowedUpdates.includes(update)
-    );
+    const { id } = req.params;
 
-    if (!isValidOperation) {
-      throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid update fields");
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid id");
     }
 
-    const menuItem = await MenuItem.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-      runValidators: true,
-    });
-
-    if (!menuItem) {
+    const existingItem = await MenuItem.findById(id);
+    if (!existingItem) {
       throw new ApiError(StatusCodes.NOT_FOUND, "Menu item not found");
     }
 
-    res.status(StatusCodes.OK).json({
-      success: true,
-      message: "Menu item updated successfully",
-      data: menuItem,
-    });
+    const {
+      name,
+      price,
+      images,
+      isAvailable,
+      ingredients,
+      dietaryTags,
+      customizationOptions,
+      addonGroups,
+      categoryId,
+      restaurantId,
+    } = req.body;
+
+    const bulkImages = req.files?.images;
+    let uploads = [];
+
+    if (bulkImages && bulkImages.length > 0) {
+      uploads = await Promise.all(
+        bulkImages.map(async (item) => {
+          const upload = await uploadFileToCloudinary(item.path);
+          if (!upload) {
+            throw new ApiError(
+              StatusCodes.BAD_REQUEST,
+              "Error while uploading images"
+            );
+          }
+          return upload.url;
+        })
+      );
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(restaurantId)) {
+      throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid restaurant ID");
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(categoryId)) {
+      throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid category ID");
+    }
+
+    if (!name || typeof name !== "string") {
+      throw new ApiError(
+        StatusCodes.BAD_REQUEST,
+        "Name must be a valid string"
+      );
+    }
+
+    const parsedPrice = parseFloat(price);
+    if (isNaN(parsedPrice) || parsedPrice < 0) {
+      throw new ApiError(
+        StatusCodes.BAD_REQUEST,
+        "Price must be a non-negative number"
+      );
+    }
+
+    const parsedIsAvailable = isAvailable === "true" || isAvailable === true;
+
+    const parsedIngredients =
+      typeof ingredients === "string" ? JSON.parse(ingredients) : ingredients;
+    if (!Array.isArray(parsedIngredients)) {
+      throw new ApiError(
+        StatusCodes.BAD_REQUEST,
+        "Ingredients must be an array"
+      );
+    }
+
+    const allowedDietaryTags = [
+      "Gluten-Free",
+      "Vegan",
+      "Jain",
+      "Eggless",
+      "Contains Nuts",
+    ];
+    const parsedTags =
+      typeof dietaryTags === "string" ? JSON.parse(dietaryTags) : dietaryTags;
+    if (!Array.isArray(parsedTags)) {
+      throw new ApiError(
+        StatusCodes.BAD_REQUEST,
+        "Dietary tags must be an array"
+      );
+    }
+    const invalidTags = parsedTags.filter(
+      (tag) => !allowedDietaryTags.includes(tag)
+    );
+    if (invalidTags.length > 0) {
+      throw new ApiError(
+        StatusCodes.BAD_REQUEST,
+        `Invalid dietary tags: ${invalidTags.join(", ")}`
+      );
+    }
+
+    const parsedCustomizationOptions =
+      typeof customizationOptions === "string"
+        ? JSON.parse(customizationOptions)
+        : customizationOptions;
+
+    const parsedAddonGroups =
+      typeof addonGroups === "string" ? JSON.parse(addonGroups) : addonGroups;
+
+    const updatedItem = await MenuItem.findByIdAndUpdate(
+      id,
+      {
+        name,
+        price: parsedPrice,
+        isAvailable: parsedIsAvailable,
+        ingredients: parsedIngredients,
+        dietaryTags: parsedTags,
+        customizationOptions: parsedCustomizationOptions,
+        addonGroups: parsedAddonGroups,
+        images: uploads,
+        categoryId,
+        restaurantId,
+      },
+      { new: true }
+    );
+
+    return new ApiResponse(
+      StatusCodes.OK,
+      { data: updatedItem },
+      "Menu item updated successfully"
+    ).send(res);
   }),
 
   deleteMenuItem: asyncHandler(async (req, res) => {
-    const menuItem = await MenuItem.findByIdAndDelete(req.params.id);
+    const { id } = req.params;
 
+    const menuItem = await MenuItem.findById(id);
     if (!menuItem) {
       throw new ApiError(StatusCodes.NOT_FOUND, "Menu item not found");
+    }
+
+    if (menuItem.images && menuItem.images.length > 0) {
+      await Promise.all(
+        menuItem.images.map(async (image) => {
+          const remove = await removeFileToCloudinary(image);
+          if (!remove) {
+            throw new ApiError(
+              StatusCodes.BAD_REQUEST,
+              "Error deleting image from Cloudinary."
+            );
+          }
+        })
+      );
+    }
+
+    const deleteMenuItem = await MenuItem.findByIdAndDelete(id);
+
+    if (!deleteMenuItem) {
+      throw new ApiError(StatusCodes.NOT_FOUND, "Item not found");
     }
 
     res.status(StatusCodes.OK).json({
@@ -261,7 +378,9 @@ const MenuItemController = {
 
   // Special Features
   toggleMenuItemAvailability: asyncHandler(async (req, res) => {
-    const menuItem = await MenuItem.findById(req.params.id);
+    const { id } = req.params;
+
+    const menuItem = await MenuItem.findById(id);
 
     if (!menuItem) {
       throw new ApiError(StatusCodes.NOT_FOUND, "Menu item not found");
@@ -270,13 +389,14 @@ const MenuItemController = {
     menuItem.isAvailable = !menuItem.isAvailable;
 
     await menuItem.save();
-    res.status(StatusCodes.OK).json({
-      success: true,
-      message: `Menu item ${
-        menuItem.isAvailable ? "activated" : "deactivated"
-      }`,
-      data: { isAvailable: menuItem.isAvailable },
-    });
+
+    return new ApiResponse(
+      StatusCodes.OK,
+      {
+        isAvailable: menuItem.isAvailable,
+      },
+      `Menu item ${menuItem.isAvailable ? "activated" : "deactivated"}`
+    ).send(res);
   }),
 
   updateMenuItemRating: asyncHandler(async (req, res) => {
@@ -303,36 +423,90 @@ const MenuItemController = {
 
     await menuItem.save();
 
-    res.status(StatusCodes.OK).json({
-      success: true,
-      message: "Rating updated successfully",
-      data: { rating: menuItem.rating },
-    });
+    return new ApiResponse(
+      StatusCodes.OK,
+      { rating: menuItem.rating },
+      "Rating updated successfully"
+    ).send(res);
   }),
 
   searchMenuItems: asyncHandler(async (req, res) => {
-    const { query } = req.query;
+    const {
+      query,
+      isVeg,
+      minPrice,
+      maxPrice,
+      dietaryTags,
+      sortBy,
+      order = "desc",
+      page = 1,
+      limit = 10,
+    } = req.query;
 
-    if (!query || query.trim().length < 3) {
-      throw new ApiError(
-        StatusCodes.BAD_REQUEST,
-        "Search query must be at least 3 characters"
-      );
+    const filter = {};
+
+    // Text Search
+    if (query && query.trim().length >= 3) {
+      filter.$text = { $search: query };
     }
 
-    const results = await MenuItem.find(
-      { $text: { $search: query } },
-      { score: { $meta: "textScore" } }
-    ).sort({ score: { $meta: "textScore" } });
+    // Veg Filter
+    if (isVeg === "true" || isVeg === "false") {
+      filter.isVeg = isVeg === "true";
+    }
 
-    res.status(StatusCodes.OK).json({
-      success: true,
-      data: results,
-    });
+    // Price Filter
+    if (minPrice || maxPrice) {
+      filter.price = {};
+      if (minPrice) filter.price.$gte = Number(minPrice);
+      if (maxPrice) filter.price.$lte = Number(maxPrice);
+    }
+
+    // Dietary Tags Filter
+    if (dietaryTags) {
+      const tagsArray = dietaryTags.split(",").map((tag) => tag.trim());
+      filter.dietaryTags = { $all: tagsArray };
+    }
+
+    // Sorting
+    const sortOptions = {};
+    if (sortBy) {
+      const allowedSortFields = [
+        "price",
+        "rating.value",
+        "orderCount",
+        "createdAt",
+      ];
+      if (allowedSortFields.includes(sortBy)) {
+        sortOptions[sortBy] = order === "asc" ? 1 : -1;
+      }
+    }
+
+    // Pagination
+    const skip = (Number(page) - 1) * Number(limit);
+
+    // Query Execution
+    const [results, totalCount] = await Promise.all([
+      MenuItem.find(filter).sort(sortOptions).skip(skip).limit(Number(limit)),
+      MenuItem.countDocuments(filter),
+    ]);
+
+    return new ApiResponse(
+      StatusCodes.OK,
+      {
+        results,
+        total: totalCount,
+        currentPage: Number(page),
+        totalPages: Math.ceil(totalCount / Number(limit)),
+      },
+      "Search completed successfully"
+    ).send(res);
   }),
 
   updateBestSellerStatus: asyncHandler(async (req, res) => {
-    const menuItem = await MenuItem.findById(req.params.id);
+    const { id } = req.params;
+
+    const menuItem = await MenuItem.findById(id);
 
     if (!menuItem) {
       throw new ApiError(StatusCodes.NOT_FOUND, "Menu item not found");
@@ -341,17 +515,22 @@ const MenuItemController = {
     menuItem.isBestSeller = !menuItem.isBestSeller;
     await menuItem.save();
 
-    res.status(StatusCodes.OK).json({
-      success: true,
-      message: `Best seller status ${
-        menuItem.isBestSeller ? "added" : "removed"
-      }`,
-      data: { isBestSeller: menuItem.isBestSeller },
-    });
+    return new ApiResponse(
+      StatusCodes.OK,
+      {
+        isBestSeller: menuItem.isBestSeller,
+      },
+      {
+        message: `Best seller status ${
+          menuItem.isBestSeller ? "added" : "removed"
+        }`,
+      }
+    ).send(res);
   }),
 
   updateMenuItemImages: asyncHandler(async (req, res) => {
     const { operation, images } = req.body;
+    const { id } = req.params;
 
     if (!["add", "remove"].includes(operation)) {
       throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid operation");
@@ -362,7 +541,7 @@ const MenuItemController = {
         ? { $push: { images: { $each: images } } }
         : { $pull: { images: { $in: images } } };
 
-    const menuItem = await MenuItem.findByIdAndUpdate(req.params.id, update, {
+    const menuItem = await MenuItem.findByIdAndUpdate(id, update, {
       new: true,
     });
 
@@ -370,16 +549,18 @@ const MenuItemController = {
       throw new ApiError(StatusCodes.NOT_FOUND, "Menu item not found");
     }
 
-    res.status(StatusCodes.OK).json({
-      success: true,
-      message: "Images updated successfully",
-      data: { images: menuItem.images },
-    });
+    return new ApiResponse(
+      StatusCodes.OK,
+      { images: menuItem.images },
+      "Images updated successfully"
+    ).send(res);
   }),
 
   incrementOrderCount: asyncHandler(async (req, res) => {
+    const { id } = req.params;
+
     const menuItem = await MenuItem.findByIdAndUpdate(
-      req.params.id,
+      id,
       { $inc: { orderCount: 1 } },
       { new: true }
     );
@@ -388,18 +569,19 @@ const MenuItemController = {
       throw new ApiError(StatusCodes.NOT_FOUND, "Menu item not found");
     }
 
-    res.status(StatusCodes.OK).json({
-      success: true,
-      message: "Order count incremented",
-      data: { orderCount: menuItem.orderCount },
-    });
+    return new ApiResponse(
+      StatusCodes.OK,
+      { orderCount: menuItem.orderCount },
+      "Order count incremented"
+    ).send(res);
   }),
 
   updateCustomizationOptions: asyncHandler(async (req, res) => {
+    const { id } = req.params;
     const { customizationOptions } = req.body;
 
     const menuItem = await MenuItem.findByIdAndUpdate(
-      req.params.id,
+      id,
       { customizationOptions },
       { new: true, runValidators: true }
     );
@@ -408,11 +590,11 @@ const MenuItemController = {
       throw new ApiError(StatusCodes.NOT_FOUND, "Menu item not found");
     }
 
-    res.status(StatusCodes.OK).json({
-      success: true,
-      message: "Customization options updated",
-      data: { customizationOptions: menuItem.customizationOptions },
-    });
+    return new ApiResponse(
+      StatusCodes.OK,
+      { customizationOptions: menuItem.customizationOptions },
+      "Customization options updated"
+    ).send(res);
   }),
 
   updateAddonGroups: asyncHandler(async (req, res) => {
@@ -428,11 +610,11 @@ const MenuItemController = {
       throw new ApiError(StatusCodes.NOT_FOUND, "Menu item not found");
     }
 
-    res.status(StatusCodes.OK).json({
-      success: true,
-      message: "Addon groups updated",
-      data: { addonGroups: menuItem.addonGroups },
-    });
+    return new ApiResponse(
+      StatusCodes.OK,
+      { addonGroups: menuItem.addonGroups },
+      "Addon groups updated"
+    ).send(res);
   }),
 };
 
