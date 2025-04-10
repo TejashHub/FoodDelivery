@@ -6,6 +6,8 @@
 import mongoose from "mongoose";
 import logger from "../logger/winston.logger.js";
 
+mongoose.set("strictPopulate", false);
+
 const connectDB = async (url, dbName) => {
   try {
     await mongoose.connect(`${url}/${dbName}`);

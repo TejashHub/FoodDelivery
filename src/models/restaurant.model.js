@@ -161,12 +161,14 @@ const restaurantSchema = new Schema(
     popularDishes: [String],
 
     logo: String,
+    logoPublicId: String,
     coverImage: String,
     images: [
       {
         url: String,
         caption: String,
         isFeatured: Boolean,
+        publicId: String,
       },
     ],
     menuImages: [String],
