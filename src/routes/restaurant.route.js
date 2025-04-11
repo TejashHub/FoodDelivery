@@ -156,28 +156,28 @@ protectedRouter
   .get(RestaurantController.getActiveRestaurantOffers);
 
 // // Utility Endpoints
-// protectedRouter.get(
-//   "/enums/cuisines",
-//   RestaurantController.getRestaurantCuisines
-// );
-// protectedRouter.get(
-//   "/enums/food-types",
-//   RestaurantController.getRestaurantFoodTypes
-// );
-// protectedRouter.get("/status/:id", RestaurantController.getRestaurantStatus);
+protectedRouter.get(
+  "/enums/cuisines",
+  RestaurantController.getRestaurantCuisines
+);
+protectedRouter.get(
+  "/enums/food-types",
+  RestaurantController.getRestaurantFoodTypes
+);
+protectedRouter.get("/status/:id", RestaurantController.getRestaurantStatus);
 
 // ====================== ADMIN ROUTES (Auth + Admin Required) ======================
 
 const adminRouter = express.Router();
 adminRouter.use(authMiddleware, adminMiddleware);
 
-// // Administration
-// adminRouter.get("/:id/verify", RestaurantController.verifyRestaurant);
-// adminRouter.patch("/:id/owners", RestaurantController.updateRestaurantOwners);
-// adminRouter
-//   .route("/:id/managers")
-//   .post(RestaurantController.addRestaurantManager)
-//   .delete(RestaurantController.removeRestaurantManager);
+// Administration
+adminRouter.get("/:id/verify", RestaurantController.verifyRestaurant);
+adminRouter.patch("/:id/owners", RestaurantController.updateRestaurantOwners);
+adminRouter
+  .route("/:id/managers")
+  .post(RestaurantController.addRestaurantManager)
+  .delete(RestaurantController.removeRestaurantManager);
 
 // Offers Management
 adminRouter

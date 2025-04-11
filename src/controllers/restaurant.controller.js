@@ -18,8 +18,6 @@ import {
   uploadFileToCloudinary,
   removeFileToCloudinary,
 } from "../config/cloudinary.config.js";
-import { create } from "domain";
-import User from "../models/user.model.js";
 
 const RestaurantController = {
   // Core Restaurant Operations
@@ -1833,11 +1831,11 @@ const RestaurantController = {
       verified ? "verified" : "unverified"
     } successfully`;
 
-    res.json({
-      success: true,
-      message: isVerifiedValue,
-      data: restaurant.isVerified,
-    });
+    return new ApiResponse(
+      StatusCodes.OK,
+      restaurant.isVerified,
+      isVerifiedValue
+    ).send(res);
   }),
 
   updateRestaurantOwners: asyncHandler(async (req, res) => {
@@ -1845,7 +1843,6 @@ const RestaurantController = {
     const { newOwnerId } = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(newOwnerId)) {
-      res.status(400);
       throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid owner ID");
     }
 
@@ -1856,15 +1853,14 @@ const RestaurantController = {
     ).select("owner");
 
     if (!restaurant) {
-      res.status(404);
       throw new ApiError(StatusCodes.BAD_REQUEST, "Restaurant not found");
     }
 
-    res.status(StatusCodes.OK).json({
-      success: true,
-      message: "Restaurant owner updated successfully",
-      data: restaurant.owner,
-    });
+    return new ApiResponse(
+      StatusCodes.OK,
+      restaurant.owner,
+      "Restaurant owner updated successfully"
+    ).send(res);
   }),
 
   addRestaurantManager: asyncHandler(async (req, res) => {
@@ -1872,7 +1868,6 @@ const RestaurantController = {
     const { managerId } = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(managerId)) {
-      res.status(400);
       throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid manager ID");
     }
 
@@ -1883,15 +1878,14 @@ const RestaurantController = {
     ).select("managers");
 
     if (!restaurant) {
-      res.status(404);
       throw new ApiError(StatusCodes.BAD_REQUEST, "Restaurant not found");
     }
 
-    res.status(StatusCodes.CREATED).json({
-      success: true,
-      message: "Manager added successfully",
-      data: restaurant.managers,
-    });
+    return new ApiResponse(
+      StatusCodes.CREATED,
+      restaurant.managers,
+      "Manager added successfully"
+    ).send(res);
   }),
 
   removeRestaurantManager: asyncHandler(async (req, res) => {
@@ -1904,15 +1898,14 @@ const RestaurantController = {
     ).select("managers");
 
     if (!restaurant) {
-      res.status(404);
       throw new ApiError(StatusCodes.BAD_REQUEST, "Restaurant not found");
     }
 
-    res.status(StatusCodes.OK).json({
-      success: true,
-      message: "Manager removed successfully",
-      data: restaurant.managers,
-    });
+    return new ApiResponse(
+      StatusCodes.OK,
+      restaurant.managers,
+      "Manager removed successfully"
+    ).send(res);
   }),
 
   // Utility Endpoints
@@ -1923,12 +1916,15 @@ const RestaurantController = {
       { $sort: { count: -1 } },
       { $project: { cuisine: "$_id", _id: 0 } },
     ]);
-    res.status(StatusCodes.OK).json({
-      success: true,
-      message: "Restaurant Cuisines fetched succesfully.",
-      count: cuisines.length,
-      data: cuisines.map((c) => c.cuisine),
-    });
+
+    return new ApiResponse(
+      StatusCodes.OK,
+      {
+        count: cuisines.length,
+        data: cuisines.map((c) => c.cuisine),
+      },
+      "Restaurant Cuisines fetched succesfully."
+    ).send(res);
   }),
 
   getRestaurantFoodTypes: asyncHandler(async (req, res) => {
@@ -1938,12 +1934,15 @@ const RestaurantController = {
       { $sort: { count: -1 } },
       { $project: { foodType: "$_id", _id: 0 } },
     ]);
-    res.json({
-      success: true,
-      message: "Restaurant Food Types fetched succesfully.",
-      count: foodTypes.length,
-      data: foodTypes.map((ft) => ft.foodType),
-    });
+
+    return new ApiResponse(
+      StatusCodes.OK,
+      {
+        count: foodTypes.length,
+        data: foodTypes.map((ft) => ft.foodType),
+      },
+      "Restaurant Food Types fetched succesfully."
+    ).send(res);
   }),
 
   // Categories Endpoints

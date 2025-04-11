@@ -1,9 +1,10 @@
-import Address from "../../models/address.model.js";
-import asyncHandler from "../../middlewares/asyncHandler.middleware.js";
-import { ApiError } from "../../errors/ApiError.js";
+import Address from "../models/address.model.js";
+import asyncHandler from "../middleware/asyncHandler.middleware.js";
 import { StatusCodes } from "http-status-codes";
+import ApiError from "../utils/apiError.js";
+import ApiResponse from "../utils/apiResponse.js";
 
-export const AddressController = {
+const AddressController = {
   createAddress: asyncHandler(async (req, res) => {
     const { street, city, state, postalCode, country } = req.body;
 
@@ -397,3 +398,5 @@ export const AddressController = {
     });
   }),
 };
+
+export default AddressController;

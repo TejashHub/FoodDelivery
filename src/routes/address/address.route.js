@@ -1,41 +1,47 @@
 import express from "express";
-import { authRoles, authMiddleware } from "../../middleware/auth.middleware.js";
-import { AddressController } from "../../controllers/address/address.controller.js";
+import authMiddleware from "../../middleware/auth.middleware.js";
+import adminMiddleware from "../../middleware/admin.middleware.js";
+
+import AddressController from "../../controllers/address.controller.js";
 
 const router = express.Router();
 router
   .route("/")
-  .get(AddressController.getAllAddress)
-  .post(AddressController.createAddress);
+  .get(authMiddleware, AddressController.getAllAddress)
+  .post(authMiddleware, AddressController.createAddress);
 
 router
   .route("/:id")
-  .get(AddressController.getAddress)
-  .patch(AddressController.updateAddress)
-  .delete(AddressController.deleteAddress);
+  .get(authMiddleware, AddressController.getAddress)
+  .patch(authMiddleware, AddressController.updateAddress)
+  .delete(authMiddleware, AddressController.deleteAddress);
 
-router.route("/user/:userId").get(AddressController.getAllAddress);
+router
+  .route("/user/:userId")
+  .get(authMiddleware, AddressController.getAllAddress);
 
 router
   .route("/:id/set-default")
-  .patch(AddressController.updateSetDefaultAddress);
+  .patch(authMiddleware, AddressController.updateSetDefaultAddress);
 
-router.route("/validate").post(AddressController.validateDefaultAddress);
+router
+  .route("/validate")
+  .post(authMiddleware, AddressController.validateDefaultAddress);
 
-router.route("/nearby/:id").get(AddressController.nearByAddress);
+router
+  .route("/nearby/:id")
+  .get(authMiddleware, AddressController.nearByAddress);
 
-router.route("/:id/delivery-check").get(AddressController.deliveryCheckAddress);
+router
+  .route("/:id/delivery-check")
+  .get(authMiddleware, AddressController.deliveryCheckAddress);
 
 router
   .route("/")
-  .get(authRoles("admin"), authMiddleware, AddressController.getAdminAddress);
+  .get(authMiddleware, adminMiddleware, AddressController.getAdminAddress);
 
 router
   .route("/:id")
-  .get(
-    authRoles("admin"),
-    authMiddleware,
-    AddressController.getAllAdminAddress
-  );
+  .get(authMiddleware, adminMiddleware, AddressController.getAllAdminAddress);
 
 export default router;
